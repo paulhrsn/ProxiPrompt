@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "services/orchestrator"
+  - "spacetimedb"
+allowBuilds:
+  esbuild: false

@@ -1,0 +1,24 @@
+{
+  "name": "@proxiprompt/spacetimedb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "publish:local": "spacetime publish --server local --module-path . proxiprompt -y",
+    "publish:local:clear": "spacetime publish --server local --module-path . proxiprompt --delete-data=always -y",
+    "publish:test": "spacetime publish --server local --module-path . proxiprompt-test -y",
+    "publish:test:clear": "spacetime publish --server local --module-path . proxiprompt-test --delete-data=always -y",
+    "generate": "spacetime generate --lang typescript --out-dir bindings --module-path . -y",
+    "smoke": "tsx scripts/smoke.ts",
+    "guardrails": "STDB_DB=${STDB_DB:-proxiprompt-test} tsx scripts/guardrails.ts"
+  },
+  "dependencies": {
+    "spacetimedb": "2.10.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

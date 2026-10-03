@@ -1,0 +1,12 @@
+{
+  "name": "ProxiPrompt",
+  "short_name": "ProxiPrompt",
+  "description": "Ask about a place. Nearby people answer.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e1412",
+  "theme_color": "#0e1412",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
