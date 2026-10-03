@@ -30,7 +30,7 @@ That starts SpacetimeDB (:3000), the Fetch agent (:8001), the orchestrator (:808
 - Asker: http://localhost:5173/
 - Responder: http://127.0.0.1:5173/
 
-Those two hosts do not share a login. On the responder tab, open **You** and set the demo location to the place being asked about. The prompt shows up under **Activity**. Ctrl+C stops everything the script started.
+Those two hosts do not share a login. On the responder tab, open **You** and set the demo location to the place being asked about. The question pops up on that tab. Stop everything with `pnpm stop` (ports 3000, 8001, 8080, and 5173), or Ctrl+C in the `pnpm dev` terminal.
 
 Optional: `npx web-push generate-vapid-keys`, put the public key in `apps/web/.env` as `VITE_VAPID_PUBLIC_KEY` and both keys in the orchestrator env. On iPhone: Safari → Share → Add to Home Screen, then enable notifications in the You tab.
 

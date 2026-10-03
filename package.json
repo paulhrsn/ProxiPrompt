@@ -5,6 +5,7 @@
   "packageManager": "pnpm@11.5.2",
   "scripts": {
     "dev": "bash scripts/dev.sh",
+    "stop": "bash scripts/kill.sh",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r --if-present build"
