@@ -18,24 +18,19 @@ services/agent           Fetch.ai uAgent (plan / synthesize / Chat Protocol)
 
 ## Local demo
 
+Asker and responder are two tabs of the same app, not two programs. From the repo root:
+
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
 pnpm install
-
-# 1. SpacetimeDB
-spacetime start                                 # terminal A, :3000
-pnpm --filter @proxiprompt/spacetimedb publish:local
-pnpm --filter @proxiprompt/spacetimedb generate
-
-# 2. Agent
-cd services/agent && uv sync && uv run python -m proxiprompt_agent.agent   # :8001
-
-# 3. Orchestrator (claims service role on first connect)
-cd services/orchestrator && pnpm exec tsx src/index.ts                     # :8080
-
-# 4. PWA
-cd apps/web && pnpm dev                                                    # :5173
+pnpm dev
 ```
+
+That starts SpacetimeDB (:3000), the Fetch agent (:8001), the orchestrator (:8080), and the web app (:5173). Then open:
+
+- Asker: http://localhost:5173/
+- Responder: http://127.0.0.1:5173/
+
+Those two hosts do not share a login. On the responder tab, open **You** and set the demo location to the place being asked about. The prompt shows up under **Activity**. Ctrl+C stops everything the script started.
 
 Optional: `npx web-push generate-vapid-keys`, put the public key in `apps/web/.env` as `VITE_VAPID_PUBLIC_KEY` and both keys in the orchestrator env. On iPhone: Safari → Share → Add to Home Screen, then enable notifications in the You tab.
 

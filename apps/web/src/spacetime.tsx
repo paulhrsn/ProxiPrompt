@@ -52,6 +52,7 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(TOKEN_KEY, tok);
         setIdentityHex(identity.toHexString());
         setConnected(true);
+        setError("");
         setConn(connection);
         connection
           .subscriptionBuilder()
@@ -59,8 +60,11 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
           .onError((ctx) => setError(String((ctx as { event?: { message?: string } | Error }).event ?? "subscription failed")))
           .subscribe(VIEWS);
       })
-      .onConnectError((_ctx, err) => setError(String(err)))
+      .onConnectError((_ctx, err) => {
+        if (!closed) setError(err instanceof Error ? err.message : "Could not reach SpacetimeDB");
+      })
       .onDisconnect(() => {
+        if (closed) return;
         setConnected(false);
         setConn(null);
       })

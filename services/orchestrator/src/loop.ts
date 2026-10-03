@@ -22,6 +22,7 @@ const processedQueries = new Set<string>();
 const processedResponses = new Set<string>();
 const processedPosts = new Set<string>();
 const jobFirstPromptAt = new Map<string, number>();
+const lastEmptyWaveAt = new Map<string, number>();
 const lastImpactPush = new Map<string, number>();
 
 function rows<T>(iter: Iterable<T> | undefined): T[] {
@@ -336,7 +337,8 @@ async function promptWave(
       lng: loc.lng,
       source: loc.source as "gps" | "demo",
       capturedAtMs: toMs(loc.capturedAt),
-      hasActiveDevice: deviceOwners.has(hexOf(loc.identity)),
+      // A fresh location means the app is open, so Activity can deliver the prompt even without Web Push.
+      hasActiveDevice: deviceOwners.has(hexOf(loc.identity)) || now - toMs(loc.capturedAt) < 120_000,
       notificationsPaused: profile?.notificationsPaused ?? false,
       lastPromptedAtMs: lastPrompt.get(hexOf(loc.identity)) ?? null,
     };
@@ -353,11 +355,16 @@ async function promptWave(
     requesterId,
   });
   if (picked.selected.length === 0) {
+    const key = String(jobId);
+    const last = lastEmptyWaveAt.get(key) ?? 0;
+    if (now - last < 30_000) return;
+    lastEmptyWaveAt.set(key, now);
     for (const q of attached) {
       await event(conn, q.id, "waiting", "No one nearby is available to ask right now");
     }
     return;
   }
+  lastEmptyWaveAt.delete(String(jobId));
 
   const survey = plan.survey;
   if (!survey) return;

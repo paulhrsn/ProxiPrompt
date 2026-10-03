@@ -68,6 +68,15 @@ p { color: var(--muted); line-height: 1.45; }
 .choices button { background: var(--bg-3); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; cursor: pointer; }
 .choices button.on { background: var(--amber); color: #1a1308; border-color: var(--amber); }
 
+.ping {
+  position: fixed; z-index: 30; left: 50%; transform: translateX(-50%);
+  bottom: 84px; width: min(520px, calc(100% - 24px));
+  max-height: min(70dvh, 640px); overflow: auto;
+  background: #1a2420; border: 1px solid var(--amber); border-radius: 20px;
+  padding: 16px; box-shadow: 0 16px 40px #000a;
+}
+.ping h2 { margin-top: 8px; }
+
 .nav {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; width: min(520px, calc(100% - 24px));
   display: grid; grid-template-columns: 1fr 1fr 1fr; background: #121a17ee; border: 1px solid var(--line);

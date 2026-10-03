@@ -30,9 +30,7 @@ function toMs(ts: { microsSinceUnixEpoch: bigint } | undefined | null): number {
   return Number(ts.microsSinceUnixEpoch / 1000n);
 }
 
-const DEMO_PRESETS = CATALOG_PLACES.filter((p) =>
-  ["shapiro-undergraduate-library", "michigan-union", "the-diag", "ccrb"].includes(p.id),
-);
+const DEMO_PRESETS = CATALOG_PLACES;
 
 export default function App() {
   const { conn, connected, error, tick } = useDb();
@@ -62,6 +60,7 @@ export default function App() {
         route.name === "profile" ? <Profile conn={conn} /> :
         <PlacePage conn={conn} id={route.id} />
       ) : null}
+      {profile && conn && route.name !== "respond" ? <PromptPing conn={conn} /> : null}
       {profile && (
         <nav className="nav">
           <button className={route.name === "home" ? "on" : ""} onClick={() => go("/")}>Ask</button>
@@ -298,18 +297,69 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
   );
 }
 
+type PromptRow = {
+  batchId: bigint;
+  placeName: string;
+  question: string;
+  controlsJson: string;
+  responded: boolean;
+};
+
+function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
+  const pending = list(conn.db.myPrompts.iter()).filter((p) => !p.responded);
+  const [hidden, setHidden] = useState("");
+  const prompt = pending.find((p) => String(p.batchId) !== hidden);
+  const id = prompt ? String(prompt.batchId) : "";
+
+  useEffect(() => {
+    if (!prompt || !id) return;
+    if (sessionStorage.getItem("pp.pinged") === id) return;
+    sessionStorage.setItem("pp.pinged", id);
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const note = new Notification(`Quick question about ${prompt.placeName}`, {
+      body: prompt.question,
+      tag: `prompt-${id}`,
+    });
+    note.onclick = () => window.focus();
+  }, [id, prompt]);
+
+  if (!prompt) return null;
+  return (
+    <div className="ping">
+      <AnswerForm conn={conn} prompt={prompt} onDone={() => setHidden(id)} />
+    </div>
+  );
+}
+
 function Respond({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>; id: string }) {
   const prompt = list(conn.db.myPrompts.iter()).find((p) => String(p.batchId) === id);
+  if (!prompt) return <p>This prompt is gone or isn’t for you.</p>;
+  return (
+    <section>
+      <AnswerForm conn={conn} prompt={prompt} />
+    </section>
+  );
+}
+
+function AnswerForm({
+  conn,
+  prompt,
+  onDone,
+}: {
+  conn: NonNullable<ReturnType<typeof useDb>["conn"]>;
+  prompt: PromptRow;
+  onDone?: () => void;
+}) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
-  if (!prompt) return <p>{done ? "Thanks — signal sent." : "This prompt is gone or isn’t for you."}</p>;
   const controls = JSON.parse(prompt.controlsJson) as { dimension_key: string; label: string; options: { value: string; label: string }[] }[];
+  if (done) return <p>Thanks — signal sent.</p>;
   return (
-    <section>
+    <>
       <p className="chip">{prompt.placeName}</p>
-      <h1>{prompt.question}</h1>
+      <h2>{prompt.question}</h2>
       <p>Someone wants a current update. They are not necessarily nearby.</p>
       {controls.map((c) => (
         <div key={c.dimension_key}>
@@ -325,19 +375,20 @@ function Respond({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["con
       {err && <p className="err">{err}</p>}
       <button
         className="btn"
-        disabled={prompt.responded || Object.keys(answers).length === 0}
+        disabled={prompt.responded || Object.keys(answers).length < controls.length}
         onClick={async () => {
           try {
             await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(answers), note });
             setDone(true);
+            onDone?.();
           } catch (e) {
             setErr((e as Error).message);
           }
         }}
       >
-        {prompt.responded ? "Already answered" : "Send"}
+        Send
       </button>
-    </section>
+    </>
   );
 }
 
@@ -443,7 +494,10 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       {loc?.source === "demo" && <div className="demo-banner">Simulated location on — routing still uses the real distance pipeline.</div>}
       <p>Location source: {loc?.source ?? "none"} {loc ? `(${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)})` : ""}</p>
       <h2>Demo location override</h2>
-      <select className="field" value={demo} onChange={(e) => setDemo(e.target.value)}>
+      <select className="field" value={demo} onChange={(e) => {
+        setDemo(e.target.value);
+        if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
+      }}>
         <option value="">Use real GPS</option>
         {DEMO_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
