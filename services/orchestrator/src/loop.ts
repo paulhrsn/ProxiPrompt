@@ -394,7 +394,9 @@ async function promptWave(
   }
   for (const q of attached) {
     await event(conn, q.id, "asking", `Asking ${picked.selected.length} people near ${place.name}`);
-    await conn.reducers.workerSetQueryStatus({ queryId: q.id, status: "collecting" });
+    if (q.status === "planning") {
+      await conn.reducers.workerSetQueryStatus({ queryId: q.id, status: "collecting" });
+    }
   }
 }
 
