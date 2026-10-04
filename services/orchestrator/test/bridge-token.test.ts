@@ -73,6 +73,12 @@ describe("ORCH_BRIDGE_TOKEN", () => {
     expect(conn.db.svcQuery.iter).not.toHaveBeenCalled();
   });
 
+  it("trims whitespace around the configured token, matching the agent", async () => {
+    vi.stubEnv("ORCH_BRIDGE_TOKEN", "  s3cret \n");
+    const base = await start(fakeConn());
+    expect((await submit(base, { Authorization: "Bearer s3cret" })).status).toBe(200);
+  });
+
   it("does not gate other routes", async () => {
     vi.stubEnv("ORCH_BRIDGE_TOKEN", "s3cret");
     const base = await start(fakeConn());
