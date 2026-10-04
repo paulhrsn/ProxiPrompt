@@ -1,6 +1,6 @@
 # ProxiPrompt demo script
 
-Three minutes for judges, beat by beat. Based on SPEC section 14 plus everything built since. A 60-second cut, a pre-demo checklist, a solo option, and fallbacks are below.
+Three minutes for judges, beat by beat. Based on SPEC section 14 plus everything built since. A 60-second cut, a pre-demo checklist, the solo MainCloud recipe with timings, and fallbacks are below.
 
 Tabs used throughout:
 
@@ -15,7 +15,7 @@ The two hosts do not share a login. That is intentional: they are two separate p
 
 ### 0:00 - Hook (15 s)
 
-**Show:** asker tab, Ask screen.
+**Show:** asker tab. Already signed in; if asked, say the app opens on a real SpacetimeAuth sign-in (email magic link), with **Use demo session** for instant access.
 **Say:** "ProxiPrompt turns nearby humans into sensors. Google can tell you a library exists. It cannot tell you if there is a quiet seat right now. We ask the fewest people who are actually there, and we tell you how sure we are."
 
 ### 0:15 - Ask a real question (20 s)
@@ -59,12 +59,17 @@ The two hosts do not share a login. That is intentional: they are two separate p
 
 **Say:** "Every deadline lives in SpacetimeDB. The job deadline, the prompt expiry, the watch expiry and a ten-minute cleanup are scheduled reducers. If our Node worker dies, the database still closes the job and writes 'insufficient fresh evidence'. Rules, privacy views and the state machine are all in the module: 72 guardrail checks."
 
-### 2:40 - Live Pulse and ASI:One chat (20 s)
+### 2:40 - ASI:One chat (20 s)
 
-**Show:** Posts tab (Live Pulse), then ASI:One chat (asi1.ai) with the agent.
-**Say:** "People can also post proactive updates. They become evidence that expires quickly. And you do not need our app at all: our uAgent is on Agentverse with the Chat Protocol, so you can ask it from ASI:One chat."
-**Do:** in ASI:One chat, send "Ask @proxipromptagent: is Shapiro Library busy right now?" (or use the shared chat link once available).
-**Audience sees:** a real query appear in the asker app, then the answer in chat.
+**Show:** Posts tab (Live Pulse) for a few seconds, then ASI:One chat (asi1.ai) with the agent.
+**Say:** "People can post proactive updates; they become evidence that expires quickly. And you do not need our app at all: our uAgent is on Agentverse with the Chat Protocol."
+**Do:** in ASI:One chat, address the agent and send these three messages in order:
+
+1. `hi` - reply is the capability intro: "Hi, I'm ProxiPrompt. I tell you what a place is like right now (crowds, noise, seating, lines, wait times) using reports from people physically nearby, never guesses." plus three example questions and 'Say "list places" to see everywhere I cover.'
+2. `list places` - reply: "I cover these places around Ann Arbor:" then places grouped by category (Libraries, Student unions, Academic, Gyms, Dining halls, Restaurants, Outdoors, Transit, Stadiums).
+3. `Is Shapiro busy right now?` - a real query. With neighbors running, the answer arrives in about 10 to 15 s (see timings below) as: a headline, then `Recommendation: Worth going now.` (or `Maybe, check the details first.` / `Probably skip it for now.`), `Confidence: High` (or Medium / Low), `Based on N recent nearby reports (newest just now)`, and the closer "Answers come from people physically near the place, not from guesses."
+
+**Audience sees:** a real query appear in the asker app, then the formatted answer in chat. If a question takes longer than about 45 s the agent first says "Still working on it" and posts the answer as "Update on your earlier question:". A message with no known place gets guidance and "list places"; a refused question gets a refusal, not a guess.
 
 ### 3:00 - Close
 
@@ -90,7 +95,7 @@ Do this 30 minutes before.
    - Local: `pnpm dev` (SpacetimeDB :3000, agent :8001, orchestrator :8080, web :5173).
    - Hosted database: `STDB_TARGET=maincloud pnpm dev` (uses `proxiprompt-mhacks` on MainCloud; no local SpacetimeDB; refuses a database without our worker token).
 2. Confirm health: `curl -s localhost:8001/health` shows `llm_configured:true`.
-3. Open two tabs: `http://localhost:5173/` (asker) and `http://127.0.0.1:5173/` (responder). Sign in each. If SpacetimeAuth is configured the screen shows Sign in plus **Use demo session**; otherwise **Explore the demo**. Pick a username.
+3. Open two tabs: `http://localhost:5173/` (asker) and `http://127.0.0.1:5173/` (responder). Sign in each. The app opens on a real SpacetimeAuth sign-in (enter an email, follow the magic link; needs `VITE_SPACETIMEAUTH_CLIENT_ID` in `apps/web/.env`) with a **Use demo session** button below it for instant access, a labeled browser-only identity. Use **Use demo session** for rehearsal and the live demo unless you want to show real sign-in. Without a client ID the button reads **Explore the demo**. Pick a username.
 4. Responder tab: You tab, Location, choose Shapiro Undergraduate Library (shown as "Demo location, simulated"). Demo locations stay valid for 6 hours in demo mode.
 5. Optional far responder: a third profile with the Michigan Union demo location, to prove it is not asked.
 6. Notifications: on laptop, You tab, **Enable phone notifications**, allow the browser permission. On iPhone: HTTPS ngrok URL, Share, Add to Home Screen, open from the icon, then enable. Physical iPhone push is untested (see PROGRESS), so do not rely on it live; the in-app prompt pop-up is the dependable path.
@@ -99,15 +104,32 @@ Do this 30 minutes before.
 9. `DEMO_MODE=1` is the default in `pnpm dev`: first wave 10 people, expansion after 10 s, job deadline 30 s.
 10. Keep the Agentverse profile and ASI:One chat open in other tabs: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile
 
-## Solo demo (optional): simulated neighbors
+## Solo demo: simulated neighbors on MainCloud
 
-If you have no teammates in the room, run simulated neighbors. Another lane is building this; check that the command exists before relying on it.
+Tested recipe (W7 rehearsal, 8 neighbors, scripted asker). Two terminals from the repo root:
 
 ```bash
-pnpm demo:neighbors
+# terminal 1: orchestrator, agent and web app against the hosted database
+STDB_TARGET=maincloud pnpm dev
+
+# terminal 2: eight bot residents
+pnpm demo:neighbors --uri wss://maincloud.spacetimedb.com --db proxiprompt-mhacks --count 8
 ```
 
-These are bot residents that answer prompts. Their accounts are labelled `_sim`, so you can say so honestly: "These are simulated neighbors; real people use the same path." They go through the same pipeline as humans (location, eligibility, one response per prompt). Say clearly that they are simulated, since a judge may ask.
+Do not pass `--seed-posts`: seeded Live Pulse posts make repeat questions answer from cache, so you would not see answers arrive live. Ask at Shapiro, Duderstadt or the Michigan Union, then a reworded repeat to show reuse.
+
+The bots are ordinary user accounts (public client reducers only, never the worker identity) with usernames ending `_sim`, and they answer after a random 3 to 12 s. Say so: "These are simulated neighbors; real people use the same path." Answers still go through the real pipeline (location, eligibility, one response per prompt). A judge may ask, so be plain that they are simulated.
+
+### Expected timings on MainCloud (measured in rehearsal)
+
+| Step | Typical time | What to say while you wait |
+|---|---|---|
+| First prompt reaches a neighbor | about 3 to 5 s | "ASI:One is turning this into the few conditions worth checking." |
+| Live answer (prompt, bot delay, synthesis) | about 10 to 15 s | "Real people near the place are being asked; the confidence comes from code, not the model." |
+| Cache reuse (reworded repeat) | about 6 to 8 s, no new prompt | "Fresh evidence already exists, so nobody is interrupted." One 23 to 25 s outlier happened on a busy shared agent. |
+| Refusal | instant (about 0.14 s) | Nothing to cover; it is the point. |
+
+Reducer round trips to MainCloud were 0.1 to 0.3 s, so the pauses are the LLM calls and the bot delay, not the network. Ask the next question's setup out loud during the pause instead of staring at the timeline.
 
 ---
 
@@ -116,7 +138,7 @@ These are bot residents that answer prompts. Their accounts are labelled `_sim`,
 | What breaks | What to do and say |
 |---|---|
 | Nobody answers the prompt | "A deadline fires in the database. With no fresh evidence it says insufficient fresh evidence, and it will not guess." This is the honest-uncertainty beat. Then answer from the responder tab and show the late answer upgrade the result ("Updated answer"). |
-| Prompt does not appear on responder tab | Check the demo location is set to the asked place and the tab is signed in as a different user than the asker. Refresh once. Fall back to `pnpm demo:neighbors` if available. |
+| Prompt does not appear on responder tab | Check the demo location is set to the asked place and the tab is signed in as a different user than the asker. Refresh once. Fall back to the simulated neighbors (`pnpm demo:neighbors`, see the solo section). |
 | Push notification does not arrive | "Push is wired with Web Push and VAPID, and we tested it on laptop; physical iPhone is not yet tested." Show the in-app prompt pop-up instead. |
 | ASI:One (LLM) slow or down | The agent falls back to a deterministic heuristic planner and marks it `planner: heuristic`. Say so: "That is the offline fallback, never presented as the AI." |
 | MainCloud unreachable | Stop, run `pnpm dev` for the local database. Same product. |

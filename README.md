@@ -74,7 +74,7 @@ The hosts do not share a login. On the responder tab, open **You** and set a dem
 
 ### Auth
 
-If `VITE_SPACETIMEAUTH_CLIENT_ID` is set, the app shows a SpacetimeAuth email sign-in plus **Use demo session** (a browser-only, labeled dev identity). Register redirect URIs `http://localhost:5173/callback` and `http://127.0.0.1:5173/callback`. If it is unset, **Explore the demo** creates the dev session directly.
+If `VITE_SPACETIMEAUTH_CLIENT_ID` is set, the app shows a SpacetimeAuth email sign-in plus **Use demo session** (a browser-only, labeled dev identity). Put the SpacetimeAuth client ID in `apps/web/.env` as `VITE_SPACETIMEAUTH_CLIENT_ID=<client id>`, and register redirect URIs `http://localhost:5173/callback` and `http://127.0.0.1:5173/callback` (plus your ngrok `/callback` if you use one). If it is unset, **Explore the demo** creates the dev session directly.
 
 ### MainCloud mode
 
@@ -83,6 +83,25 @@ STDB_TARGET=maincloud pnpm dev
 ```
 
 Uses the hosted database `proxiprompt-mhacks` and skips local SpacetimeDB. It refuses a MainCloud database that does not have our worker token, because the first identity to claim the service role on a public database becomes the worker. Dashboard: https://spacetimedb.com/proxiprompt-mhacks
+
+### Demo scripts
+
+Simulated neighbors (bot residents with `_sim` usernames that answer prompts after 3 to 12 s, so one person can demo alone). Run with the stack up:
+
+```bash
+pnpm demo:neighbors -- --db proxiprompt --count 8 --seed-posts                    # local
+pnpm demo:neighbors --uri wss://maincloud.spacetimedb.com --db proxiprompt-mhacks --count 8   # MainCloud, answers arrive live
+```
+
+Flags: `--uri`, `--db`, `--count` (default 8, max 40), `--seed-posts` (adds Live Pulse posts; repeat questions then answer from cache), `--min-delay` / `--max-delay`. Details: [`services/orchestrator/README.md`](services/orchestrator/README.md).
+
+Rehearsal asker (scripted questions against a hosted test database; it refuses `proxiprompt-mhacks`). It needs an orchestrator and `demo:neighbors` on the same database:
+
+```bash
+pnpm --filter @proxiprompt/orchestrator exec tsx scripts/rehearse.ts --uri wss://maincloud.spacetimedb.com --db proxiprompt-mhacks-test
+```
+
+It reports time to first prompt, time to answered, final status, evidence count and confidence per question. The full solo recipe with timings is in [`DEMO.md`](DEMO.md).
 
 ## Tests
 
