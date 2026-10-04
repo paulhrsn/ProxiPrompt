@@ -70,6 +70,18 @@ State at handoff:
 - 2026-10-03 (correctness pass): **Social (Bluesky) evidence can inform a score but never satisfy sufficiency, and never counts as a nearby report.** Three scraped posts previously reached support 0.72 with ceiling 0.95 and answered a query with nobody asked, violating SPEC §1.1 in spirit. `DimensionScore.firsthandSupport` added and gated in `isSufficient`; social excluded from `contributors`/`ceilingFor`; social filed under its own `other:social_mention` dimension instead of hijacking `plan.dimensions[0]`. `ENABLE_BLUESKY` default left unchanged. SPEC §8 updated.
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
+## Session 16 orchestration log (2026-10-04 ~07:10, Paul napping ~1 h; goal: demo-ready product, Sonnet does the work, Opus orchestrates sparingly)
+SpacetimeAuth client `client_034a2MZhz5kQgykZquPJIl` set in git-ignored `apps/web/.env` (`VITE_SPACETIMEAUTH_CLIENT_ID`). Redirect URIs verified accepted by SpacetimeAuth: `http://localhost:5173/callback`, `http://127.0.0.1:5173/callback`, ngrok `/callback` (a bogus URI is rejected). Plain `pnpm dev` now shows real sign-in plus "Use demo session". Magic link is SpacetimeAuth's built-in method (the Identity Providers page lists only social providers, all left disabled).
+
+| Lane | Work | Branch | Isolation | Status |
+|---|---|---|---|---|
+| W3 | Simulated neighbors: bot residents that answer prompts so a solo presenter can demo | `feat/demo-neighbors` | own DB `proxiprompt-bots`, orchestrator :8085 | dispatched |
+| W4 | Submission kit: DEMO.md, DEVPOST.md, Agentverse README, root README | `docs/submission-kit` | docs only | dispatched |
+| W1 | Hands-on demo polish via browser (SPEC §14, auth screen, watch, posts) | `fix/demo-polish` | `proxiprompt-test`, ports 8081/5174 | waiting for the auth e2e run to free the ports |
+
+Events:
+- Browser e2e started with the client ID set (checks the tests survive the new sign-in screen); running long, result pending.
+
 ## Work log addendum: MainCloud (2026-10-04, session 15, after Paul's `spacetime login`)
 - Published to MainCloud: live DB **`proxiprompt-mhacks`** (dashboard https://spacetimedb.com/proxiprompt-mhacks) and test DB `proxiprompt-mhacks-test`. New names, not `proxiprompt`, because worker tokens are stored per DB name in `spacetimedb/.local/worker-token-<db>`; reusing the local name would mix local and cloud tokens.
 - Service role on `proxiprompt-mhacks` claimed immediately after publish by our worker identity `c2005377d9d4...` (token in git-ignored `spacetimedb/.local/worker-token-proxiprompt-mhacks`). Do not delete that file: the claim is first-come and the DB is public.
