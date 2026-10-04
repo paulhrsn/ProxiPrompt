@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { enterDemo, expect, test } from "./fixtures";
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
@@ -6,6 +6,7 @@ test("mobile layout, question starters, place search and navigation", async ({ p
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
+  await enterDemo(page);
   await page.getByLabel("Name", { exact: true }).fill(`ui${Date.now().toString(36)}`);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Know before you go." })).toBeVisible();
@@ -41,19 +42,25 @@ test("mobile layout, question starters, place search and navigation", async ({ p
 });
 
 
-test("signed-out welcome has a clear entry action at phone and desktop sizes", async ({ page }) => {
+test("signed-out sign-in screen offers email sign-in and the demo session at phone and desktop sizes", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pp.devMode", "0"));
   await page.goto("/");
-  const welcome = page.getByRole("heading", { name: "Know before you go." });
-  await expect(welcome).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByLabel("Email")).toBeVisible();
+  const signInButton = page.locator("section.sign-in").getByRole("button", { name: "Sign in", exact: true });
+  await expect(signInButton).toBeDisabled();
+  await page.getByLabel("Email").fill("someone@umich.edu");
+  await expect(signInButton).toBeEnabled();
+  await page.getByLabel("Email").fill("");
   await expect(page.getByRole("button", { name: "Dev", exact: true })).toHaveCount(0);
   for (const width of [320, 390, 1024]) {
     await page.setViewportSize({ width, height: 844 });
-    const action = await page.getByRole("button", { name: "Explore the demo" }).boundingBox();
+    const action = await page.getByRole("button", { name: "Use demo session" }).boundingBox();
     expect(action!.y + action!.height).toBeLessThan(844);
+    expect(action!.height).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: `test-results/welcome-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `test-results/signin-${width}.png`, fullPage: true });
   }
-  await page.getByRole("button", { name: "Explore the demo" }).click();
+  await page.getByRole("button", { name: "Use demo session" }).click();
   await expect(page.getByRole("heading", { name: "Your name" })).toBeVisible();
 });

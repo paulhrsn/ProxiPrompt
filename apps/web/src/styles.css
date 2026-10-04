@@ -681,6 +681,10 @@ html { scrollbar-color: #b8b8b8 var(--bg); }
 .welcome-actions .hint { text-align: center; margin: 0; }
 .sign-in { padding-top: 32px; display: flex; flex-direction: column; gap: 24px; }
 .sign-in h1, .sign-in .label { margin: 0; }
+.sign-in-intro p { margin: 8px 0 0; color: var(--muted); max-width: 32ch; }
+.sign-in-or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.sign-in-or::before, .sign-in-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.sign-in .hint { text-align: center; margin: -12px 0 0; }
 @media (max-height: 550px) {
   .welcome { gap: 32px; }
   .welcome-intro { padding-bottom: 0; }
@@ -724,12 +728,10 @@ html { scrollbar-color: #b8b8b8 var(--bg); }
 .developer-section .group button, .developer-section .group .setting-button { background: transparent; }
 .developer-section .group button.danger { background: #e5e5e5; color: #222; }
 .account-section .group { margin-bottom: 0; }
-.sign-in-demo { position: absolute; top: calc(8px + env(safe-area-inset-top)); right: max(16px, calc(50% - 206px)); min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
 
 .selected-location { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
 .location-map { margin-top: 16px; }
 .location-map h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-.sign-in-demo { font-size: 13px; }
 
 /* The update composer has one clear task surface and explicit attribution choices. */
 .composer { border: 0; border-radius: 16px; padding: 18px; margin: 8px 0 20px; box-shadow: none; }

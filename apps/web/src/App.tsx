@@ -116,7 +116,6 @@ export default function App() {
           <button type="button" aria-current={tab === "you" ? "page" : undefined} className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
         </nav>
       ) : null}
-      {!signedIn && CLIENT_ID ? <button className="sign-in-demo" type="button" onClick={() => setDev(true)}>Use demo session</button> : null}
     </div>
   );
 }
@@ -152,8 +151,11 @@ function SignedOut() {
     );
   }
   return (
-    <section className="sign-in">
-      <h1>Sign in</h1>
+    <section className="sign-in" aria-labelledby="sign-in-title">
+      <div className="sign-in-intro">
+        <h1 id="sign-in-title">Sign in</h1>
+        <p>Know before you go. Get local knowledge from the people already there.</p>
+      </div>
       <label className="label">
         Email
         <input className="input" type="email" autoComplete="email" placeholder="you@umich.edu" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -166,6 +168,9 @@ function SignedOut() {
       >
         Sign in
       </button>
+      <div className="sign-in-or" aria-hidden="true"><span>or</span></div>
+      <button className="btn ghost" type="button" onClick={() => setDev(true)}>Use demo session</button>
+      <p className="hint">Demo session skips sign-in and uses a local identity in this browser.</p>
     </section>
   );
 }
