@@ -38,7 +38,8 @@ Built-in behavior:
 - **Reciprocal priority.** People who answered neighbors recently get their own questions served first and asked to more people (credit is capped at 5, zero credit is never penalized, and credit is never visible to others).
 - **Live Pulse.** Proactive community posts become short-lived evidence, ranked by freshness rather than engagement.
 - **Subjective vs objective.** Opinions are labeled as opinions and never turned into facts by consensus.
-- **Ask from ASI:One chat.** The same workflow runs from ASI:One through our Agentverse agent, no app needed.
+- **Ask from ASI:One chat.** The same workflow runs from ASI:One through our Agentverse agent, no app needed. The chat is polished: greetings and "help" get a capability intro with example questions, "list places" returns the catalog grouped by category, a message with no recognizable place gets guidance instead of a guess, and answers are formatted as a headline, a plain-sentence recommendation, confidence, and "Based on N recent nearby reports (newest X ago)". Insufficient evidence says it will not guess, and a late answer arrives as "Update on your earlier question".
+- **Simulated neighbors (a demo and testing tool).** `pnpm demo:neighbors` runs bot residents so one presenter can demo alone. They are ordinary user accounts that use only normal client actions (never the worker identity), their usernames end `_sim`, and they answer prompts after a random 3 to 12 s. They are labeled as simulated everywhere we show them and are not part of the product's evidence claims.
 - **Privacy.** Responders are never identified. Exact coordinates live in private tables. Public views expose place-level data only.
 
 ## How we built it
@@ -74,7 +75,8 @@ Confidence is deterministic. Each observation has weight freshness x source weig
 - The database runs the clock: with the worker down, a job deadline still closes the question honestly.
 - Test coverage across layers: 131 core, 63 orchestrator and 148 agent tests, 72 guardrail checks against the module, and 4 browser end-to-end scenarios (last full runs recorded in `PROGRESS.md`).
 - The agent is live on Agentverse, searchable, and reachable from ASI:One chat.
-- Hosted on SpacetimeDB MainCloud (`proxiprompt-mhacks`).
+- Hosted on SpacetimeDB MainCloud (`proxiprompt-mhacks`), with a scripted rehearsal against the MainCloud test database (8 simulated neighbors, scripted asker, headless browser): no cloud-path bugs; live answers in 10 to 13 s, cache reuse typically 5.6 to 8.4 s (one 23 to 25 s outlier on a busy shared agent), refusals in about 0.14 s, database round trips 0.1 to 0.3 s. These are rehearsal measurements with simulated neighbors, not a user study.
+- Real sign-in is live: SpacetimeAuth email magic link, with a labeled demo session for instant access.
 
 ## What we learned
 
@@ -109,7 +111,7 @@ ProxiPrompt is real-time local decision intelligence: it knows what it does not 
 | Agent registered on Agentverse | Agent address `agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs`, mailbox connected, publicly searchable. Profile: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile |
 | Chat Protocol implemented | The uAgent includes `chat_protocol_spec`, publishes its manifest, and handles ChatMessage / ChatAcknowledgement (`services/agent/src/proxiprompt_agent/agent.py`). Status on Agentverse: active, AgentChatProtocol. |
 | ASI:One as the reasoning engine | `services/agent/src/proxiprompt_agent/llm.py` and `planner.py` call the ASI:One OpenAI-compatible API (`https://api.asi1.ai/v1`) to review and rewrite questions, plan evidence needs and survey wording, write the synthesized answer, and summarize posts. |
-| Usable from ASI:One chat | Verified in ASI:One chat: messages became real queries in the database. The agent resolves a campus place, submits through the orchestrator bridge, and replies with headline, confidence and sources, or sends a follow-up if the answer takes longer than about 45 s. |
+| Usable from ASI:One chat | Verified in ASI:One chat: messages became real queries in the database. The agent resolves a campus place, submits through the orchestrator bridge, and replies with a headline, recommendation, confidence and report count with freshness, or sends a follow-up if the answer takes longer than about 45 s. |
 | Primary workflow completes without a custom frontend | Ask from ASI:One chat, nearby people are prompted, the answer returns in the chat. The PWA is only needed by the responders. |
 | Public repo | `https://github.com/paulhrsn/ProxiPrompt.ai` |
 | Public ASI:One chat share link | `TODO_ASI_ONE_CHAT_LINK` |
@@ -128,4 +130,4 @@ SpacetimeDB is the single authoritative state and the rule engine, not a cache.
 - **Real-time subscriptions.** The PWA timeline, prompt pop-up and Live Pulse are live subscriptions. The orchestrator is itself a subscriber that reacts to row changes.
 - **Guardrails.** 72 automated checks against the module (`pnpm --filter @proxiprompt/spacetimedb guardrails`), including deadline, watch expiry and cleanup with no worker running. Also passed against MainCloud.
 - **MainCloud.** Live database `proxiprompt-mhacks` (https://spacetimedb.com/proxiprompt-mhacks), started with `STDB_TARGET=maincloud pnpm dev`.
-- **SpacetimeAuth login.** Email magic-link sign-in through SpacetimeAuth (OIDC); the ID token authenticates the database connection. A labeled demo session exists for development.
+- **SpacetimeAuth login.** Email magic-link sign-in through SpacetimeAuth (OIDC) is live in the app; the ID token authenticates the database connection. The sign-in screen also offers a labeled "Use demo session" (a browser-only dev identity) for instant access.
