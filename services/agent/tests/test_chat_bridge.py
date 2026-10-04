@@ -51,7 +51,7 @@ async def test_orchestrator_poll_returns_headline_confidence_sources():
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         reply, pending = await bridge.run_orchestrated("Is Shapiro busy?", "agent1abc", "http://orc", total_s=5, interval_s=0.01, client=c)
     assert pending is None
-    assert reply == "Shapiro is moderately busy. Confidence: High. Sources: 2 recent nearby reports."
+    assert reply == "Shapiro is moderately busy.\nConfidence: High\nBased on 2 recent nearby reports\nAnswers come from people physically near the place, not from guesses."
 
 
 async def test_orchestrator_timeout_gives_progress_message():
@@ -104,7 +104,7 @@ async def test_follow_up_poll_returns_a_late_answer():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         text = await bridge.poll_until_done("http://orc", "abc", total_s=2, interval_s=0.01, client=c)
-    assert text == "Seats opened up. Confidence: High. Sources: 2 recent nearby reports."
+    assert text == "Seats opened up.\nConfidence: High\nBased on 2 recent nearby reports\nAnswers come from people physically near the place, not from guesses."
 
 
 def _recording_handler(seen: list):

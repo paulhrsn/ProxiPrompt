@@ -17,7 +17,7 @@ Name a place on the University of Michigan campus or in Ann Arbor, and what you 
 
 Places the agent knows by name include Shapiro Library, Hatcher Library, the Michigan Union, Duderstadt Center, Pierpont Commons, Ross School of Business, CCRB, South Quad Dining, the Diag, Blake Transit Center and Michigan Stadium. If it cannot match a place it tells you to name one.
 
-You will see a headline, a confidence (High, Medium or Low), and a sources line such as "2 recent nearby reports". Real people near the place are asked, which can take a minute or two. If the answer is not ready, the agent says it is still working and sends the answer in the same chat when it arrives.
+You will see a headline, a confidence (High, Medium or Low), and a line such as "Based on 2 recent nearby reports". Greetings, "help", "list places" and questions with no known place get an instant local reply and never start a query. Real people near the place are asked, which can take a minute or two. If the answer is not ready, the agent says it is still working and sends the answer in the same chat when it arrives.
 
 ## How it works
 
