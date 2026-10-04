@@ -1,30 +1,40 @@
 # ProxiPrompt: real-time local conditions from nearby humans
 
-**ProxiPrompt turns nearby humans into queryable, uncertainty-aware sensors.** Ask about a specific place's *current* conditions. The agent works out what you actually need to know, checks fresh evidence, asks the fewest useful people physically near that place only if it has to, and returns an answer with a confidence level and provenance.
+**ProxiPrompt turns nearby humans into queryable, uncertainty-aware sensors.** Ask about a specific place's *current* conditions: is it busy, quiet, open, is there a line. The agent works out what you need to know, checks fresh evidence, asks the fewest useful people physically near that place only if it has to, and replies with a recommendation, a confidence level and where the answer came from.
 
 It never answers from model world-knowledge. With no fresh evidence the answer is an explicit **"insufficient fresh evidence"**.
 
-## What you can ask
+## Try it (paste into ASI:One chat)
 
-- "Is Shapiro Library busy right now?"
-- "Is Shapiro worth going to if I need somewhere quiet to study?"
-- "How long is the line at the Michigan Union?"
-- "Are there any free treadmills at the CCRB?"
-- "Is there parking near Michigan Stadium?"
-- "Is South Quad Dining open and is there a wait?"
+Name a place on the University of Michigan campus or in Ann Arbor, and what you want to know.
 
-## Capabilities
+- Is Shapiro Library busy right now?
+- Is Shapiro worth going to if I need somewhere quiet to study?
+- How long is the line at the Michigan Union?
+- Are there any free treadmills at the CCRB?
+- Is there parking near Michigan Stadium?
+- Is South Quad Dining open and is there a wait?
 
-- **Plan:** turns a question into the few conditions worth checking (noise, seating, crowd, wait time, line length, equipment, parking, open status, atmosphere, "is it worth it") and a short, neutral micro-survey for people near the place.
-- **Synthesize:** composes a one-sentence answer plus caveats from a bundle of fresh nearby reports. It never invents evidence or raises the computed confidence. Subjective opinions are labeled as opinions.
-- **Summarize posts:** condenses community posts into one sentence and structured claims that expire quickly.
-- **Privacy by design:** the requester is never identified to the people who are asked, and responders' identities and coordinates are never exposed. Questions about private individuals, homes, dorm rooms, patients or surveillance are refused.
+Places the agent knows by name include Shapiro Library, Hatcher Library, the Michigan Union, Duderstadt Center, Pierpont Commons, Ross School of Business, CCRB, South Quad Dining, the Diag, Blake Transit Center and Michigan Stadium. If it cannot match a place it tells you to name one.
+
+You will see a headline, a confidence (High, Medium or Low), and a sources line such as "2 recent nearby reports". Real people near the place are asked, which can take a minute or two. If the answer is not ready, the agent says it is still working and sends the answer in the same chat when it arrives.
+
+## How it works
+
+1. **Understand.** ASI:One reads the question, rewrites messy wording, and refuses questions it should not answer.
+2. **Plan.** It picks the few conditions worth checking (noise, seating, crowd, wait time, line length, equipment, parking, open status, atmosphere, "is it worth it").
+3. **Check fresh evidence.** Recent reports already collected for that place are scored first. If they are enough, nobody is interrupted.
+4. **Ask nearby people.** If not, a small wave of people physically near the place gets a short, neutral quick-choice question. The wave grows only if needed.
+5. **Answer.** Confidence is computed deterministically from freshness, source and agreement. ASI:One writes the sentence and caveats but cannot invent evidence or raise the confidence. Opinions are labeled as opinions.
+
+## Privacy and safety
+
+- The person asking is never identified to the people asked, and responders' identities and coordinates are never exposed.
+- Only the responder's distance to the place matters, not where the requester is.
+- Refused: questions about a named private individual, homes, dorm rooms, patients or surveillance, harassment, spam, and anything not observable at a place right now.
+- Questions are normalized (contact details and links removed, shouting and filler tidied) before anyone sees them.
 
 Keywords: local conditions, crowd, wait time, seating, campus, real-time, human sensors, line length, noise level, availability, University of Michigan, Ann Arbor.
-
-## Talking to the agent
-
-Use the Chat Protocol (ASI:One, or the Agentverse "Chat with Agent" button). Name a place and what you want to know. Answers come back with a headline, a High / Medium / Low confidence, and a sources line such as "2 recent nearby reports". Collecting live answers from nearby people can take up to a minute or two; if it isn't ready the agent says so and you can ask again.
 
 ## Interfaces
 
@@ -33,7 +43,7 @@ Use the Chat Protocol (ASI:One, or the Agentverse "Chat with Agent" button). Nam
 | Chat Protocol (`chat_protocol_spec`, manifest published, mailbox) | ASI:One / Agentverse users | Replies, then ends the session |
 | `POST /plan`, `POST /synthesize`, `POST /summarize_post`, `GET /health` | ProxiPrompt orchestrator | JSON over HTTP, see `SPEC.md` §9 |
 
-Planner behavior: when `ASI_ONE_API_KEY` is set, ASI:One (OpenAI-compatible, `https://api.asi1.ai/v1`, model `asi1` by default) does the planning and writing; every output is validated and clamped (dimension vocabulary, TTL bounds, radius 50–500 m, 1–5 responders, 1–3 survey controls). With no key, or if the model output is invalid, a deterministic heuristic planner is used and responses carry `"planner": "heuristic"`.
+Planner behavior: when `ASI_ONE_API_KEY` is set, ASI:One (OpenAI-compatible, `https://api.asi1.ai/v1`, model `asi1` by default) does the planning and writing; every output is validated and clamped (dimension vocabulary, TTL bounds, radius 50-500 m, 1-5 responders, 1-3 survey controls). With no key, or if the model output is invalid, a deterministic heuristic planner is used and responses carry `"planner": "heuristic"`.
 
 ---
 
@@ -61,8 +71,9 @@ Environment (names only; see `.env.example`):
 | `AGENT_PORT` | Default `8001` |
 | `AGENT_MAILBOX` | `1` to connect through the Agentverse mailbox |
 | `AGENT_ENDPOINT` | Public HTTPS `/submit` URL if not using a mailbox |
-| `AGENT_HANDLE` | Optional Agentverse handle (e.g. `proxiprompt`) |
+| `AGENT_HANDLE` | Optional Agentverse handle (`proxipromptagent`; `proxiprompt` is taken) |
 | `ORCHESTRATOR_URL` | Base URL of the orchestrator for the Chat Protocol bridge. Unset ⇒ chat replies with the plan only |
+| `ORCH_BRIDGE_TOKEN` | Optional locally; must match the orchestrator's token, sent as a Bearer header |
 
 Quick check:
 
