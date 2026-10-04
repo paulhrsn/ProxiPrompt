@@ -214,6 +214,18 @@ await check('claim_service_role: first caller becomes the service identity (once
     return 'service role already claimed by this worker identity on a previous run';
   }
 });
+await check('service identity query relay is capped at 60/h', async () => {
+  // Loops until rejected so a re-run inside the same hour (budget partly spent) still passes.
+  for (let i = 0; i <= 60; i++) {
+    const r = await R(W).submitQuery({ clientRequestId: `svc-rl-${run}-${i}`, placeId: slug, text: `Relay question ${i}` }).then(
+      () => '',
+      (e: Error) => errMessage(e),
+    );
+    if (/Rate limit reached: at most 60 service_queries/.test(r)) return `rejected after ${i} accepted this run`;
+    if (r) throw new Error(`unexpected error: ${r}`);
+  }
+  throw new Error('61 relayed queries accepted in one hour');
+});
 await check('second identity cannot claim_service_role', () => rejects(R(D).claimServiceRole({}), /already been claimed/));
 await check('non-service identity cannot add_service_identity', () =>
   rejects(R(D).addServiceIdentity({ identity: D.identity }), /Only the service/));

@@ -24,9 +24,8 @@ async def test_heuristic_plan_for_demo_question(shapiro):
         assert 3 <= len(c.options) <= 4
         assert [o.ordinal for o in c.options] == list(range(len(c.options)))
     assert p.responder_radius_m == 150 and p.responder_count == 2
-    # The survey question is generated from place + dimensions, never the requester's own
-    # words: one evidence job can serve several queries, and it must not identify or quote
-    # whoever asked, nor imply the responder is the one who asked (SPEC §3).
+    # Vocabulary questions get a generated survey question, not the requester's words: one
+    # evidence job can serve several queries (SPEC §9). Only freeform questions are quoted.
     assert p.survey.question != SHAPIRO_Q
     assert p.survey.question.startswith("Quick question about Shapiro Undergraduate Library")
     assert "noise level" in p.survey.question

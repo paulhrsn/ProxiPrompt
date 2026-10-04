@@ -12,10 +12,23 @@ def with_key(monkeypatch):
     monkeypatch.setenv("ASI_ONE_API_KEY", "test-key")
 
 
-def mock_llm(monkeypatch, result=None, exc=None):
-    calls = []
+class _Calls(list):
+    """Planner/synthesis calls; the ASI:One input-review calls are kept apart in ``.review``."""
+
+    def __init__(self):
+        super().__init__()
+        self.review = []
+
+
+def mock_llm(monkeypatch, result=None, exc=None, review=None, review_exc=None):
+    calls = _Calls()
 
     async def fake(system, user, schema_hint=""):
+        if system == planner.REVIEW_SYSTEM:
+            calls.review.append((system, user))
+            if review_exc:
+                raise review_exc
+            return {"verdict": "ok"} if review is None else review
         calls.append((system, user))
         if exc:
             raise exc

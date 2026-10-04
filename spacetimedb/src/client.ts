@@ -6,6 +6,7 @@ import {
   PLACE_RATE_LIMIT_PER_HOUR,
   POST_RATE_LIMIT_PER_HOUR,
   QUERY_RATE_LIMIT_PER_HOUR,
+  SERVICE_QUERY_RATE_LIMIT_PER_HOUR,
   REPORT_RATE_LIMIT_PER_HOUR,
   addEvent,
   checkAttribution,
@@ -169,9 +170,9 @@ export const submit_query = spacetimedb.reducer(
   { client_request_id: t.string(), place_id: t.string(), text: t.string() },
   (ctx, { client_request_id, place_id, text }) => {
     // The service identity submits on behalf of ASI:One chat users (SPEC §9). It has no
-    // profile and is trusted infrastructure, so it is exempt from the profile requirement
-    // and the per-account hourly limit — otherwise every Agentverse question would share
-    // one user's 10/h budget.
+    // profile, so it skips the profile requirement, and it gets its own hourly budget:
+    // sharing one user's 10/h would starve the relay, but no cap would let anyone with an
+    // ASI:One chat flood nearby users with prompts.
     const viaService = isService(ctx);
     if (!viaService) requireProfile(ctx);
     const crid = checkString('client_request_id', client_request_id, 1, 64);
@@ -182,7 +183,8 @@ export const submit_query = spacetimedb.reducer(
 
     requirePlace(ctx, place_id);
     checkBlocklist('text', body);
-    if (!viaService) consumeRate(ctx, 'queries', QUERY_RATE_LIMIT_PER_HOUR);
+    if (viaService) consumeRate(ctx, 'service_queries', SERVICE_QUERY_RATE_LIMIT_PER_HOUR);
+    else consumeRate(ctx, 'queries', QUERY_RATE_LIMIT_PER_HOUR);
 
     const q = ctx.db.query.insert({
       id: 0n,

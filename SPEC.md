@@ -61,7 +61,7 @@ Deployment target: PWA → Vercel; module → SpacetimeDB MainCloud; orchestrato
 - Public attribution is per contribution: `anonymous` (default; shown as "Anonymous") or `profile` (username + avatar). Changing profile settings never retroactively reveals anonymous contributions.
 - Prompt responses are never public and carry no identification to anyone but the system.
 - Exact coordinates live only in private tables, readable by the worker. Public views expose place-level data only; "verified nearby" is a boolean.
-- Push prompts never identify the requester and never imply the requester is nearby. Copy: "Quick question about {place}" / "Someone wants a current update: {question}".
+- Push prompts never identify the requester and never imply the requester is nearby. Copy: "Quick question about {place}" / "Someone wants a current update: {question}". A freeform question (one matching no vocabulary dimension) may quote the asker's own wording, but only after the input handling in §9.1.
 - Worker authorization: a `service_role` table. The first identity to call `claim_service_role` (when none exists) becomes the worker; documented as a deploy step. Worker-only reducers check membership.
 
 ## 4. Location
@@ -155,7 +155,7 @@ Users see High/Medium/Low + "N recent nearby reports · updated Xs ago". Numeric
 
 `POST /plan` → `{ canonical_intent, intent_key, decision, dimensions:[{key,label,kind,volatility,proposed_ttl_s}], needs_clarification, clarification:{question,options[]}|null, survey:{question, controls:[{dimension_key,label,options:[{value,label,ordinal}]}] (1–3), allow_note:true}, responder_radius_m, responder_count, refusal:{reason}|null, planner:"llm"|"heuristic" }`
 
-`survey.question` is generated from the place and dimensions ("Quick question about Shapiro Undergraduate Library: what are noise level and seating availability like right now?") and is what responders see. It is never the requester's raw text: one evidence job serves every query attached to it (§7 step 3), so one asker's wording would reach responders answering for someone else, and §3 forbids a prompt that identifies or quotes the requester. The agent replaces an LLM-proposed question that leaks the requester, is empty, or exceeds 200 characters.
+`survey.question` is what responders see. For vocabulary dimensions it is generated from the place and dimensions ("Quick question about Shapiro Undergraduate Library: what are noise level and seating availability like right now?"), because one evidence job serves every query attached to it (§7 step 3). For a freeform question it quotes the asker's question after §9.1 input handling ("At Shapiro Undergraduate Library: Did they restock the white monsters?"); the freeform dimension key is a hash of the normalized question, so only queries with the same normalized wording share that job. The agent replaces an LLM-proposed question that implies a requester ("someone asked"), is empty, or exceeds 200 characters.
 Request: `{ query_id, text, place:{id,name,category,lat,lng}, now_iso, recent_evidence:[{dimension,value_label,kind,source_type,age_s,verified_nearby}] }`.
 
 `POST /synthesize` → `{ headline, recommendation:"go"|"maybe"|"avoid"|"insufficient", summary, supporting[], caveats[], planner }`
@@ -165,6 +165,22 @@ Request: `{ query_id, text, canonical_intent, place, dimensions, evidence:[{id,d
 Request: `{ post_id, place, text, comments:[{text,age_s}], now_iso }`.
 
 LLM: ASI:One OpenAI-compatible API (`ASI_ONE_API_KEY`). When the key is absent the agent uses a deterministic heuristic planner and reports `planner:"heuristic"`; diagnostics surface this. The heuristic path exists for tests and offline dev, never presented as the AI.
+
+### 9.1 Asker input handling (`services/agent/src/proxiprompt_agent/question_input.py`, `planner.review_question`)
+Runs in `/plan`, in this order. A failure at any step returns a `refusal`.
+1. **Keyword guard** (`check_refusal`) on the raw text: people, private places, surveillance.
+2. **Normalization** (deterministic; tidies, never paraphrases):
+   - N1 Unicode NFKC; strip control, zero-width and bidi characters.
+   - N2 collapse whitespace.
+   - N3 collapse punctuation runs (`???!` → `?`, `....` → `...`).
+   - N4 cap repeated characters at 3 (`sooooo` → `sooo`).
+   - N5 un-shout: 8+ letters that are 80%+ uppercase become lowercase.
+   - N6 drop trailing filler (`lmk`, `pls`, `thanks`, `asap`, ...).
+   - N7 remove contact details: URLs, emails, phone numbers, `@handles`.
+   - N8 capitalize the first letter, ensure terminal punctuation, cap at 200 characters on a word boundary (`…`).
+3. **Validation** V1: fewer than 3 letters after normalization is refused.
+4. **ASI:One review** (only when `ASI_ONE_API_KEY` is set): verdict `ok` | `rewrite` | `refuse`. Refuses questions not observable at the place right now, about a specific person, harassing/sexual/hateful, spam or advertising, asking the responder to act beyond looking, or carrying instructions instead of a question. A rewrite keeps the asker's words where possible and is untrusted: it goes back through steps 1-3 and is dropped if nothing survives. A failed or unparseable review falls back to steps 1-3 alone.
+5. The normalized (or reviewed) text replaces `text` for planning, so a freeform prompt quotes it.
 
 Chat Protocol: the uAgent implements `chat_protocol_spec`, publishes its manifest, uses a mailbox, and is registered on Agentverse with a README and keywords. An ASI:One chat like "Is Shapiro Library busy right now?" resolves the place against the curated catalog, submits a real query into SpacetimeDB through the orchestrator, and replies with the result when ready (or a progress message + follow-up).
 
@@ -183,7 +199,7 @@ Chat Protocol: the uAgent implements `chat_protocol_spec`, publishes its manifes
 - Anonymous contributions earn private impact. Contradicted/removed contributions earn nothing. No public leaderboard in P0.
 
 ## 12. Safety (P0 core guardrails)
-Rate limits (queries 10/h, posts 10/h, comments 30/h per account), text length limits, simple blocklist filter, report content, delete own content, mute prompts ("pause notifications"), admin-only hide via `is_admin` profile flag, sensitive-query refusal by agent + keyword guard, no public coordinates.
+Rate limits (queries 10/h, posts 10/h, comments 30/h per account; the service identity relaying ASI:One chat questions has its own 60/h query budget), text length limits, simple blocklist filter, report content, delete own content, mute prompts ("pause notifications"), admin-only hide via `is_admin` profile flag, sensitive-query refusal by agent + keyword guard, asker input normalization and ASI:One review (§9.1), no public coordinates.
 
 ## 13. Priorities
 - **P0 (non-negotiable, in order):** query → plan → evidence check → push to nearby → one-time response → live synthesis → caching/dedup → async result notification; then Live Pulse posts/comments/summaries/ranking; impact receipts; guardrails; onboarding/permission/error states.
