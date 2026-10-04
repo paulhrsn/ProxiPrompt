@@ -75,13 +75,15 @@ Goal (Paul): take the 4 open items; Sonnet subagents implement, Opus orchestrate
 |---|---|---|---|---|
 | L1 | e2e suite isolation: canonical then watch flake on shared `proxiprompt-test` | `fix/e2e-isolation` / `../ProxiPrompt-lanes/fix-e2e-isolation` | sole owner of `proxiprompt-test`, ports 8081/5174 | dispatched |
 | L2 | shared bridge token on `/asi/query` (safe hosted deploy) | `feat/asi-bridge-token` / `../ProxiPrompt-lanes/feat-asi-bridge-token` | orchestrator `asi.ts` + agent `bridge.py`; no DB | dispatched |
-| L3 | PROGRESS "Known issues" cleanup (stale lines) | `docs/known-issues` / `../ProxiPrompt-lanes/docs-known-issues` | only the Known issues section | dispatched |
+| L3 | PROGRESS "Known issues" cleanup (stale lines) | `docs/known-issues` / `../ProxiPrompt-lanes/docs-known-issues` | only the Known issues section | **merged** (`0e372f9`) |
 | L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | dispatched |
 
 Infra started by orchestrator: `spacetime start` on :3000, shared agent on :8001 (LLM on). No live orchestrator/Vite on 8080/5173.
 
 Events:
 - 2026-10-04: base `106acec` (after `git pull` of Syn's UI commits). Worktrees created; local tokens copied to L1/L4.
+- L1-L4 dispatched in parallel to Sonnet workers.
+- L3 done `0e372f9`: Known issues rewritten (e2e path corrected, stale VAPID line replaced with the real gap: iPhone push untested, ASI:One status line removed, env-file and human-only bullets added, reciprocal marked in progress). Orchestrator verified: diff touches only that section, 0 dashes, e2e guard claim matches `services/orchestrator/scripts/e2e.ts`. Merged to main.
 
 ## Work log
 - 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
