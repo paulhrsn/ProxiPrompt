@@ -49,7 +49,7 @@ Previously:
 - SpacetimeAuth project + magic-link client ID (optional; demo works without).
 - Google Cloud billing + Maps key (optional).
 - `npx web-push generate-vapid-keys` and install PWA on iPhones (iOS ≥16.4, Add to Home Screen).
-- ASI:One API key; Agentverse account, mailbox, Evaluate Registration, handle `@proxiprompt`.
+- ASI:One API key; Agentverse account, mailbox, Evaluate Registration, handle `@proxipromptagent` (`@proxiprompt` is the team's ASI:One personal AI).
 - `spacetime login` + MainCloud publish; Vercel + Railway deploys.
 - Fetch.ai ASI Submission Agent + Devpost.
 

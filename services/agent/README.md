@@ -80,7 +80,7 @@ curl -s -X POST localhost:8001/plan -H 'content-type: application/json' -d '{
 2. Pick a long random `AGENT_SEED` and keep it stable. Set `AGENT_MAILBOX=1` and (optionally) `AGENT_HANDLE=proxiprompt`.
 3. Start the agent. The log prints `Agent inspector available at https://agentverse.ai/inspect/?uri=...&address=agent1...`. Open that link.
 4. Click **Connect → Mailbox → Finish**. Sign in to Agentverse if asked. The agent now shows under *Local Agents* with a mailbox.
-5. In Agentverse, open the agent profile and verify the README (this file) and the keywords are shown. Add the keywords above if missing, and set the handle `@proxiprompt`.
+5. In Agentverse, open the agent profile and verify the README (this file) and the keywords are shown. Add the keywords above if missing, and set the handle `@proxipromptagent` (`@proxiprompt` is taken by the team's ASI:One personal AI).
 6. Click **Evaluate Registration** and make sure all checks pass (Chat Protocol manifest published, README present, agent active). Keep the process running while evaluating.
-7. In ASI:One (<https://asi1.ai>), enable **Agents** and ask: "Ask @proxiprompt: is Shapiro Library busy right now?" (or search the agent by name/handle and open a chat).
+7. In ASI:One (<https://asi1.ai>), enable **Agents** and ask: "Ask @proxipromptagent: is Shapiro Library busy right now?" (or search the agent by name/handle and open a chat).
 8. For the hackathon deployment, run this service on Railway with a public HTTPS URL, set the same `AGENT_SEED`, and keep `AGENT_MAILBOX=1`. The orchestrator reaches it over `AGENT_URL`.
