@@ -60,6 +60,12 @@ Previously:
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
 ## Work log
+- 2026-10-03 session 7 (Paul's screenshot: responder card for "Is there anyone named shiyuen at the dude rn?"):
+  1. **Person-locating question went out to responders.** The keyword guard only caught capitalised names. New `_RE_PERSON_NAMED` refuses "anyone/someone/a guy/the girl ... named/called". 7 new refusal/non-refusal cases.
+  2. **Presence radio group read as a pointless question.** Routing already picks nearby people; the control only exists where GPS cannot separate neighbours (Duderstadt/Pierpont, floors). `AnswerForm` now renders it as a ghost "I'm not at {place}" skip button that submits `not_here`; the data sent is unchanged.
+  3. **Freeform prompt repeated the place** ("At Duderstadt Center: ..." under a "Duderstadt Center" header). Prefix dropped.
+  - Agent restarted with new code and probed live. ASI:One still off (`llm_configured:false`), so slang like "rn" is not rewritten until `ASI_ONE_API_KEY` is set.
+  - Tests: agent 141, orchestrator 30, web typecheck clean.
 - 2026-10-03 session 6 (security review of `293dd9f`, 3 findings; 2 reproduced and fixed, the third arrived without detail):
   1. **Keyword guard bypass via normalization.** `check_refusal` ran on raw text only, so "is ｍｙ ｅｘ there", zero-width splits, or "my https://a.example ex" passed, then normalized into "Is my ex there?" for responders. New `planner.guard_input` checks raw + normalized + V1, used by `plan`, `plan_heuristic`, and review rewrites.
   2. **ReDoS in N6.** The nested-quantifier filler regex hung on "lmk, " x 1000, and `PlanRequest.text` was unbounded. Filler now stripped one word per pass; input capped (model `max_length=1000`, normalization reads at most 1000). Worst case measured < 5 ms.

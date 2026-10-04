@@ -117,6 +117,11 @@ _RE_SURVEILLANCE = re.compile(
     r"|\b(?:monitor|watch)(?:ing)?\s+(?:him|her|them|someone|the people|students)\b"
     r"|\bis\s+.+\s+cheating\b"
 )
+# "anyone named shiyuen", "a guy called tom": asks after a specific person whatever the casing.
+_RE_PERSON_NAMED = re.compile(
+    r"\b(?:any(?:one|body)|some(?:one|body)|a\s+(?:guy|girl|man|woman|person|student|kid|dude|friend)|"
+    r"the\s+(?:guy|girl|man|woman|person|student|kid|dude))\s+(?:named|called)\b"
+)
 _RE_SENSITIVE_LOCATION = re.compile(
     r"\bdorm\s+room\b|\bbedroom\b|\b(?:someone|somebody)'?s?\s+(?:home|house|apartment|room)\b"
     r"|\b(?:his|her|their)\s+(?:home|house|apartment|room)\b|\bpatients?\b|\btherapy\s+session\b|\bclinic\s+waiting\b"
@@ -142,7 +147,7 @@ def check_refusal(text: str, place_name: str = "") -> str | None:
         return _REFUSAL_SENSITIVE
     if _RE_SURVEILLANCE.search(t):
         return _REFUSAL_SURVEILLANCE
-    if _RE_PERSON_LOCATION.search(t) or _RE_PERSON_RELATION.search(t):
+    if _RE_PERSON_LOCATION.search(t) or _RE_PERSON_RELATION.search(t) or _RE_PERSON_NAMED.search(t):
         return _REFUSAL_PERSON
     for m in _RE_NAMED_PRIVATE.finditer(original):
         words = {w.lower() for w in m.group(1).split()}
@@ -233,9 +238,10 @@ def _decision_text(text: str, place_name: str, keys: list[str]) -> str:
 
 def _survey_question(place_name: str, keys: list[str], asked: str | None = None) -> str:
     # Freeform: the asker's own question is the only sensible wording. By now it has been
-    # normalized and reviewed (SPEC §9.1), and the prompt does not imply the asker is nearby.
+    # normalized and reviewed (SPEC §9.1). No place prefix: the card and the push title
+    # already name the place.
     if len(keys) == 1 and is_freeform(keys[0]):
-        return f"At {place_name}: {as_question(asked or '')}"[:200]
+        return as_question(asked or "")
     labels = [DIMENSION_LABELS.get(k, label_for(k)).lower() for k in keys]
     if len(labels) == 1:
         what = labels[0]

@@ -785,9 +785,21 @@ function AnswerForm({
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
   const controls = JSON.parse(prompt.controlsJson) as { dimension_key: string; label: string; options: { value: string; label: string }[] }[];
-  const passed = answers["other:place_part"] === "not_here";
-  const visible = passed ? controls.filter((c) => c.dimension_key === "other:place_part") : controls;
+  // Routing already picked people who are near the place. The presence control only exists
+  // where GPS can't tell this place from a neighbour, so it is a way out, not a question.
+  const presence = controls.find((c) => c.dimension_key === "other:place_part");
+  const pass = presence?.options.find((o) => o.value === "not_here");
+  const visible = controls.filter((c) => c.dimension_key !== "other:place_part");
   const answered = visible.filter((c) => answers[c.dimension_key]).length;
+  const submit = async (payload: Record<string, string>) => {
+    try {
+      await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(payload), note });
+      setDone(true);
+      onDone?.();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
   if (done) return <p>Thanks — signal sent.</p>;
   return (
     <>
@@ -798,7 +810,7 @@ function AnswerForm({
           {c.label && c.dimension_key !== "other:answer" ? <legend>{c.label}</legend> : null}
           {c.options.map((o) => (
             <label className="radio" key={o.value}>
-              <input type="radio" name={c.dimension_key} checked={answers[c.dimension_key] === o.value} onChange={() => setAnswers(c.dimension_key === "other:place_part" && o.value === "not_here" ? { "other:place_part": "not_here" } : { ...answers, [c.dimension_key]: o.value })} />
+              <input type="radio" name={c.dimension_key} checked={answers[c.dimension_key] === o.value} onChange={() => setAnswers({ ...answers, [c.dimension_key]: o.value })} />
               {o.label}
             </label>
           ))}
@@ -813,19 +825,15 @@ function AnswerForm({
         <button
           className="btn"
           disabled={prompt.responded || answered < visible.length}
-          onClick={async () => {
-            try {
-              const payload = Object.fromEntries(visible.map((c) => [c.dimension_key, answers[c.dimension_key]]));
-              await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(payload), note });
-              setDone(true);
-              onDone?.();
-            } catch (e) {
-              setErr((e as Error).message);
-            }
-          }}
+          onClick={() => submit(Object.fromEntries(visible.map((c) => [c.dimension_key, answers[c.dimension_key]])))}
         >
           Send
         </button>
+        {pass ? (
+          <button className="btn ghost" disabled={prompt.responded} onClick={() => submit({ "other:place_part": "not_here" })}>
+            {pass.label}
+          </button>
+        ) : null}
         {onDone ? <button className="btn ghost" onClick={onDone}>Not now</button> : null}
       </div>
     </>

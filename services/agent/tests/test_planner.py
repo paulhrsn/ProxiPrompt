@@ -69,6 +69,12 @@ async def test_canned_option_sets(shapiro):
         "who is inside the dorm room on 3rd floor",
         "can you track her around campus",
         "how many patients are in the waiting room at the clinic",
+        # Lowercase names slip past the capitalised-name pattern; "named/called" gives them away.
+        "Is there anyone named shiyuen at the dude rn?",
+        "anybody called jake here",
+        "is a guy named tom at the gym",
+        "is the girl named priya still at the front desk",
+        "have you seen someone called alex",
     ],
 )
 async def test_refusals(shapiro, text):
@@ -77,7 +83,13 @@ async def test_refusals(shapiro, text):
     assert p.dimensions == [] and p.survey is None
 
 
-@pytest.mark.parametrize("text", [SHAPIRO_Q, "Is Michigan Union at capacity?", "Is the Diag busy?", "Is Shapiro Undergraduate Library in use?"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        SHAPIRO_Q, "Is Michigan Union at capacity?", "Is the Diag busy?", "Is Shapiro Undergraduate Library in use?",
+        "is the cafe named Comet open", "is the band called Phoenix playing yet",
+    ],
+)
 async def test_not_refused(shapiro, text):
     assert (await planner.plan(plan_req(shapiro, text))).refusal is None
 
@@ -185,7 +197,8 @@ async def test_freeform_question_keeps_the_asker_s_wording(shapiro):
     assert planner.is_freeform(key)
     assert "white monsters" in p.survey.question
     assert "the answer" not in p.survey.question.lower()
-    assert p.survey.question.startswith(f"At {shapiro['name']}:")
+    # The card and push title already name the place; the question is the asker's, tidied.
+    assert p.survey.question == "Did they restock the white monsters?"
     # Two different freeform questions about one place must not share an evidence job,
     # which findAttachableJob decides from the dimension sets.
     other = await planner.plan(plan_req(shapiro, "did anyone leave a blue umbrella"))
