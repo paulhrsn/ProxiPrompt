@@ -3,7 +3,7 @@
 Read `SPEC.md` first (the contract). This file is the operational state. **Every agent updates this file after every substantive batch.** Never write secret values here — only env var names.
 
 ## How to resume (cold start)
-1. Read `SPEC.md`, then this file top to bottom.
+1. Read `SPEC.md`, then this file top to bottom, then `NEXT_STEPS.md` (detailed specs for every upcoming work item).
 2. Check "Current objective" and "Next actions".
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
@@ -212,6 +212,8 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 - Reciprocal priority P1 experiment not built.
 
 ## Next actions (for the next human/agent)
+Full specs (isolation rules, test plans, file/line pointers, estimates) for each item are in `NEXT_STEPS.md`. This list is the summary.
+
 1. **Playwright browser e2e of SPEC §14** (~1.5 h; last unmet acceptance criterion). Run against `proxiprompt-test`, never the live DB: a second Vite with `VITE_SPACETIMEDB_DB=proxiprompt-test` and a second orchestrator (`ORCH_PORT=8081`, `SPACETIMEDB_DB=proxiprompt-test`, worker token in `spacetimedb/.local/worker-token-proxiprompt-test`); make the Vite proxy target configurable. 4 contexts: asker; 2 responders with demo location Shapiro; 1 at Michigan Union. Assert: 2 nearby prompted, far not; answers land; answer shows confidence; second asker gets "Reusing fresh evidence" and no new prompts. Playwright browsers are cached in `~/Library/Caches/ms-playwright`; the npm package is not installed yet.
 2. **Fix what step 1 finds.**
 3. **SpacetimeDB track upgrades** (see "Sponsor tracks" below), highest value first: scheduled reducers for deadlines/expiry, SpacetimeAuth, MainCloud publish.
