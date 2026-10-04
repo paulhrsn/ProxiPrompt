@@ -76,6 +76,13 @@ if [[ "$SKIP_PORT80" != "1" ]] && ! up "http://127.0.0.1:80/"; then
 fi
 
 if [[ "$STDB_TARGET" == "maincloud" ]]; then
+  # claim_service_role is first-come. A brand-new MainCloud database would sit unclaimed and
+  # public until the orchestrator connects, so only update databases we already own (our worker
+  # token exists). Create and claim new ones deliberately (see PROGRESS "MainCloud").
+  if [[ ! -s "$ROOT/spacetimedb/.local/worker-token-${SPACETIMEDB_DB}" ]]; then
+    echo "Refusing: no worker token for ${SPACETIMEDB_DB}. It is not a database this machine has claimed."
+    exit 1
+  fi
   echo "Using MainCloud database ${SPACETIMEDB_DB} (no local SpacetimeDB)"
   echo "Publishing module ${SPACETIMEDB_DB} to MainCloud"
   (cd "$ROOT/spacetimedb" && spacetime publish --server maincloud --module-path . "$SPACETIMEDB_DB" -y)

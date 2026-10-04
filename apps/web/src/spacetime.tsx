@@ -16,7 +16,10 @@ function spacetimeUri(): string {
 
 const URI = spacetimeUri();
 const DB = import.meta.env.VITE_SPACETIMEDB_DB || "proxiprompt";
-const TOKEN_KEY = "pp.token";
+// One saved identity per database: a token issued by the local server is rejected by MainCloud
+// (and the reverse), and local and MainCloud databases have different names. The local
+// `proxiprompt` keeps the original key so existing dev users (laptop and ngrok) stay put.
+const TOKEN_KEY = DB === "proxiprompt" ? "pp.token" : `pp.token:${DB}`;
 
 const VIEWS = [
   "SELECT * FROM place",
@@ -55,6 +58,7 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
+  const [retry, setRetry] = useState(0);
   const bump = () => setTick((n) => n + 1);
 
   useEffect(() => {
@@ -85,7 +89,15 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
           .subscribe(VIEWS);
       })
       .onConnectError((_ctx, err) => {
-        if (!closed) setError(err instanceof Error ? err.message : "Could not reach SpacetimeDB");
+        if (closed) return;
+        const message = err instanceof Error ? err.message : "Could not reach SpacetimeDB";
+        // A saved dev token this server does not recognise: forget it and start a fresh session.
+        if (dev && token && /verify token|unauthori[sz]ed|401/i.test(message)) {
+          localStorage.removeItem(TOKEN_KEY);
+          setRetry((n) => n + 1);
+          return;
+        }
+        setError(message);
       })
       .onDisconnect(() => {
         if (closed) return;
@@ -100,7 +112,7 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
       clearInterval(ping);
       c.disconnect();
     };
-  }, [dev, idToken]);
+  }, [dev, idToken, retry]);
 
   const value = useMemo(() => ({ conn, identityHex, connected, error, tick }), [conn, identityHex, connected, error, tick]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
