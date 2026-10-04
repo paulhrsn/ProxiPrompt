@@ -762,3 +762,7 @@ html { scrollbar-color: #b8b8b8 var(--bg); }
 .chosen-place { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: -8px 0 16px; font-size: 13px; color: var(--muted); }
 .chosen-place strong { color: var(--ink); overflow-wrap: anywhere; }
 .chosen-place .text { font-size: 13px; }
+
+.react-note { animation: react-fade 3s ease forwards; }
+@keyframes react-fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .react-note { animation: none; } }

@@ -472,7 +472,12 @@ function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const chosen = lockedPlace ?? place;
+  const [changing, setChanging] = useState(false);
+  // One step to post: default to where the user is (claimed or demo building) until they change it.
+  const here = list(conn.db.myLocation.iter())[0];
+  const hereId = here?.claimedPlaceId || localStorage.getItem("pp.demoPlace") || "";
+  const defaultPlace = CATALOG_PLACES.find((p) => p.id === hereId);
+  const chosen = lockedPlace ?? place ?? (changing ? undefined : defaultPlace);
   if (!open) return <button className="compose-trigger" type="button" onClick={() => { setErr(""); setOpen(true); }}><span className="compose-plus"><Icon name="plus" /></span><span>Post an update<small>What’s happening where you are?</small></span></button>;
   return (
     <form
@@ -497,6 +502,8 @@ function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace
     >
       {lockedPlace ? (
         <p className="chosen-place">Posting at <strong>{lockedPlace.name}</strong></p>
+      ) : !place && !changing && defaultPlace ? (
+        <p className="chosen-place">Posting at <strong>{defaultPlace.name}</strong><button className="text" type="button" onClick={() => setChanging(true)}>Change</button></p>
       ) : (
         <>
           <PlaceField place={place} onPlace={setPlace} />
@@ -600,6 +607,12 @@ function PostCard({
   const [open, setOpen] = useState(commentsOpen);
   const [reacting, setReacting] = useState(false);
   const [reactNote, setReactNote] = useState("");
+  const [reactOk, setReactOk] = useState(false);
+  useEffect(() => {
+    if (!reactNote || !reactOk) return;
+    const timer = setTimeout(() => setReactNote(""), 3000);
+    return () => clearTimeout(timer);
+  }, [reactNote, reactOk]);
   const count = Number(post.commentCount);
   async function react(text: "Still true" | "This changed") {
     if (reacting) return;
@@ -607,8 +620,10 @@ function PostCard({
     setReactNote("");
     try {
       await conn.reducers.createComment({ postId: post.postId, text, attribution: "anonymous" });
+      setReactOk(true);
       setReactNote(text === "Still true" ? "Marked still true." : "Marked as changed.");
     } catch (error) {
+      setReactOk(false);
       setReactNote((error as Error).message);
     } finally {
       setReacting(false);
@@ -631,7 +646,7 @@ function PostCard({
       {summaryAdds(post.text, post.summary) ? <p>{post.summary}</p> : null}
       {post.freshnessNote && post.freshnessState !== "fresh" && post.freshnessState !== "reinforced" ? <p className={`note ${post.freshnessState}`}>{post.freshnessNote}</p> : null}
       <button className="text" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide" : commentLabel}</button>
-      {reactNote ? <p>{reactNote}</p> : null}
+      {reactNote ? <p className={reactOk ? "react-note" : undefined} role="status">{reactNote}</p> : null}
       {open ? (
         <>
           <div className="row">
@@ -1043,12 +1058,25 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
   const queries = list(conn.db.myQueries.iter()).sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
   const prompts = list(conn.db.myPrompts.iter()).filter(isAnswerable);
   const watches = list(conn.db.myWatches.iter()).filter((w) => w.status !== "cancelled").sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+  // A watch also files a question for its first check. Show the two as one item: the watch card
+  // carries that question's status, and the question drops out of Recent questions.
+  const firstCheck = new Map<string, (typeof queries)[number]>();
+  for (const w of watches) {
+    const mate = queries
+      .filter((q) => q.text === w.text && q.placeId === w.placeId && Math.abs(toMs(q.createdAt) - toMs(w.createdAt)) <= 120_000)
+      .sort((a, b) => Math.abs(toMs(a.createdAt) - toMs(w.createdAt)) - Math.abs(toMs(b.createdAt) - toMs(w.createdAt)))[0];
+    if (mate) firstCheck.set(String(w.id), mate);
+  }
+  const pairedIds = new Set([...firstCheck.values()].map((q) => q.id));
+  const standalone = queries.filter((q) => !pairedIds.has(q.id));
   return (
     <section>
       {watches.length ? (
         <>
           <h1>Watching</h1>
           {watches.map((w) => {
+            const check = firstCheck.get(String(w.id));
+            const checkAnswer = check?.answerJson ? (JSON.parse(check.answerJson) as { headline?: string }) : null;
             const target = (() => {
               try {
                 return JSON.parse(w.targetJson || "null") as { phrase?: string } | null;
@@ -1069,6 +1097,14 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
                 <p className="body">{headline}</p>
                 <p>{w.text}</p>
                 {w.lastValue ? <p className="body">{w.lastValue}</p> : <p>I'll tell you here when it changes.</p>}
+                {check ? (
+                  <p>
+                    First check: {STATUS_LABEL[check.status] ?? check.status}
+                    {checkAnswer?.headline ? ` · ${plain(checkAnswer.headline)}` : ""}
+                    {" "}
+                    <button className="text" type="button" onClick={() => go(`/q/${check.id}`)}>See first check</button>
+                  </p>
+                ) : null}
                 {w.status === "active" || w.status === "planning" ? (
                   <button className="text" type="button" onClick={() => void conn.reducers.cancelWatch({ watchId: w.id }).catch(() => undefined)}>Stop watching</button>
                 ) : null}
@@ -1088,9 +1124,9 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
           ))}
         </>
       ) : null}
-      <h1>Recent questions</h1>
+      {standalone.length || !watches.length ? <h1>Recent questions</h1> : null}
       {queries.length === 0 ? <div className="empty"><span className="empty-icon"><Icon name="questions" /></span><h2>Curiosity starts here.</h2><p>Your questions and answers stay here,<br />ready whenever you need them.</p><button className="btn" onClick={() => go("/")}>Ask your first question</button></div> : null}
-      {queries.map((q) => {
+      {standalone.map((q) => {
         const open = OPEN_QUERY.has(q.status);
         const answer = q.answerJson
           ? (JSON.parse(q.answerJson) as { headline?: string; confidence?: { level?: string }; sourceCount?: number })
