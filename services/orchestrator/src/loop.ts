@@ -11,6 +11,7 @@ import {
   watchReading,
   nextWaveCount,
   placePart,
+  reciprocityCredit,
   selectResponders,
   type PlanResponse,
   type ScoringObservation,
@@ -38,6 +39,8 @@ const lastReceivedEvent = new Map<string, string>();
 /** Evidence signature behind each finished answer, so late updates fire once per change. */
 const answeredSignature = new Map<string, string>();
 const processedWatches = new Set<string>();
+/** Queries already told about their reciprocal-priority boost. */
+const boostAnnounced = new Set<string>();
 
 /** Clears all in-memory tick state. Tests call this between cases. */
 export function resetLoopState(): void {
@@ -52,6 +55,7 @@ export function resetLoopState(): void {
   lastReceivedEvent.clear();
   answeredSignature.clear();
   processedWatches.clear();
+  boostAnnounced.clear();
 }
 
 function rows<T>(iter: Iterable<T> | undefined): T[] {
@@ -122,6 +126,10 @@ function isVerifiedNearby(
 export async function tick(conn: Conn): Promise<void> {
   const demo = ["1", "true", "yes", "on"].includes((process.env.DEMO_MODE ?? "1").toLowerCase());
   const cfg = getConfig(demo);
+  // Env switch for the experiment; anything but an explicit off keeps the config default.
+  if (["0", "false", "no", "off"].includes((process.env.RECIPROCAL_PRIORITY ?? "").toLowerCase())) {
+    cfg.RECIPROCAL_PRIORITY = false;
+  }
   const now = nowMs();
 
   await ingestResponses(conn, cfg, now);
@@ -171,6 +179,22 @@ async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, no
     void cfg;
     void now;
   }
+}
+
+/**
+ * Reciprocal priority credit for one user (SPEC §7): real answers in the last 24 hours,
+ * capped at 5. Zero when the experiment is off. Only ever used to order and size the
+ * requester's own work, never exposed to anyone else.
+ */
+function creditOf(conn: Conn, userHex: string, cfg: ReturnType<typeof getConfig>, now: number): number {
+  if (!cfg.RECIPROCAL_PRIORITY) return 0;
+  const mine = rows(conn.db.svcPromptResponse.iter())
+    .filter((r) => hexOf(r.responder) === userHex)
+    .map((r) => ({
+      createdAtMs: toMs(r.createdAt),
+      pass: Object.values(parseJson<Record<string, string>>(r.answersJson, {})).includes("not_here"),
+    }));
+  return reciprocityCredit(mine, now);
 }
 
 function passResponseIds(conn: Conn, jobId: bigint): string[] {
@@ -320,8 +344,12 @@ function fitPlanForPlace(
 }
 
 async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
-  for (const q of rows(conn.db.svcQuery.iter())) {
-    if (q.status !== "planning") continue;
+  // Higher reciprocity credit is planned (and so prompted) first; created order breaks ties.
+  const planning = rows(conn.db.svcQuery.iter())
+    .filter((q) => q.status === "planning")
+    .map((q) => ({ q, credit: creditOf(conn, hexOf(q.requester), cfg, now) }))
+    .sort((a, b) => b.credit - a.credit || toMs(a.q.createdAt) - toMs(b.q.createdAt));
+  for (const { q, credit } of planning) {
     const lock = String(q.id);
     if (processedQueries.has(lock) && q.planJson) continue;
     const place = placeOf(conn, q.placeId);
@@ -393,6 +421,16 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
         if (!created) throw new Error("job row did not appear");
         jobId = created.id;
         await conn.reducers.workerAttachQuery({ queryId: q.id, jobId });
+      }
+
+      if (credit > 0 && !boostAnnounced.has(lock)) {
+        boostAnnounced.add(lock);
+        await event(
+          conn,
+          q.id,
+          "boost",
+          `Priority boost: you answered ${credit} neighbor${credit === 1 ? "" : "s"} today`,
+        );
       }
 
       const obs = scoringObs(conn, q.placeId, now);
@@ -490,7 +528,13 @@ async function promptWave(
   const existing = rows(conn.db.svcPromptRecipient.iter()).filter((r) => r.jobId === jobId);
   const remaining = cfg.MAX_RECIPIENTS - existing.length;
   if (remaining <= 0) return;
-  const want = Math.min(cfg.FIRST_WAVE, remaining);
+  // The first wave reaches further for requesters who answered neighbors; later waves do not.
+  const attachedQueries = rows(conn.db.svcQuery.iter()).filter((q) => q.evidenceJobId === jobId);
+  const credit =
+    wave === "first"
+      ? Math.max(0, ...attachedQueries.map((q) => creditOf(conn, hexOf(q.requester), cfg, now)))
+      : 0;
+  const want = Math.min(cfg.FIRST_WAVE + credit, remaining);
   if (want <= 0) return;
 
   const devices = rows(conn.db.svcDevice.iter()).filter((d) => d.active);

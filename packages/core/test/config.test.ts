@@ -13,6 +13,7 @@ describe("getConfig", () => {
       PROMPT_EXPIRY_S: 600,
       LOCATION_MAX_AGE_S: 1800,
       SUFFICIENT_SCORE: 0.6,
+      RECIPROCAL_PRIORITY: true,
     });
   });
 
@@ -27,6 +28,7 @@ describe("getConfig", () => {
       PROMPT_EXPIRY_S: 600,
       LOCATION_MAX_AGE_S: 21600,
       SUFFICIENT_SCORE: 0.6,
+      RECIPROCAL_PRIORITY: true,
     });
   });
 });

@@ -9,6 +9,8 @@ export interface CoreConfig {
   PROMPT_EXPIRY_S: number;
   LOCATION_MAX_AGE_S: number;
   SUFFICIENT_SCORE: number;
+  /** Requesters who answered neighbors recently go first and reach more people (SPEC §7). */
+  RECIPROCAL_PRIORITY: boolean;
 }
 
 /** Timing config, SPEC §7 (and §4 for location age). */
@@ -24,6 +26,7 @@ export function getConfig(demoMode: boolean): CoreConfig {
         PROMPT_EXPIRY_S: 600,
         LOCATION_MAX_AGE_S: 21600,
         SUFFICIENT_SCORE: 0.6,
+        RECIPROCAL_PRIORITY: true,
       }
     : {
         FIRST_WAVE: 10,
@@ -35,5 +38,6 @@ export function getConfig(demoMode: boolean): CoreConfig {
         PROMPT_EXPIRY_S: 600,
         LOCATION_MAX_AGE_S: 1800,
         SUFFICIENT_SCORE: 0.6,
+        RECIPROCAL_PRIORITY: true,
       };
 }
