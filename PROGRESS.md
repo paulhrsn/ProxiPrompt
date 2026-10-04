@@ -25,7 +25,7 @@ State at handoff:
 | implement-intelligence | done | Places catalog, GPS/demo adapter, plan/score/route/cache/dedup/async deadlines |
 | build-pulse | done | Posts, comments, AI summaries, utility ranking, attribution, impact receipts |
 | harden-demo | done | Guardrails in module (61 checks), onboarding, permission copy, diagnostics, fallback catalog |
-| add-stretches | done | Bluesky provider (ENABLE_BLUESKY), diagnostics drawer, confirm/changed as structured comments. Reciprocal priority **not** built (optional P1 experiment) |
+| add-stretches | done | Bluesky provider (ENABLE_BLUESKY), diagnostics drawer, confirm/changed as structured comments. Reciprocal priority built session 15 (SPEC §7) |
 
 ## Environment / toolchain
 - node v24.9.0, pnpm 11.5.2, Python 3.12 (agent uv), 3.14 system, uv 0.11.19, SpacetimeDB CLI **2.10.2** at `~/.local/bin/spacetime`.
