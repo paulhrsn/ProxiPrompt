@@ -240,7 +240,7 @@ def reply_message(text: str) -> ChatMessage:
 
 async def _send_follow_up(ctx: Context, sender: str, url: str, query_id: str) -> None:
     try:
-        text = await bridge.poll_until_done(url, query_id, total_s=bridge.FOLLOW_UP_TOTAL_S)
+        text = await bridge.poll_until_done(url, query_id, total_s=bridge.FOLLOW_UP_TOTAL_S, late=True)
     except Exception:
         ctx.logger.exception("follow-up poll failed")
         return
@@ -254,14 +254,11 @@ async def on_chat(ctx: Context, sender: str, msg: ChatMessage):
     await ctx.send(sender, ChatAcknowledgement(timestamp=datetime.now(timezone.utc), acknowledged_msg_id=msg.msg_id))
     text = extract_text(msg)
     pending_id = None
-    if not text:
-        reply = "Ask me about current conditions at a place, e.g. “Is Shapiro Library busy right now?”"
-    else:
-        try:
-            reply, pending_id = await bridge.handle_chat_text(text, sender)
-        except Exception:
-            ctx.logger.exception("chat workflow failed")
-            reply, pending_id = "Something went wrong while handling that question. Please try again.", None
+    try:
+        reply, pending_id = await bridge.handle_chat_text(text, sender)
+    except Exception:
+        ctx.logger.exception("chat workflow failed")
+        reply, pending_id = "Something went wrong while handling that question. Please try again.", None
     await ctx.send(sender, reply_message(reply))
     if pending_id:
         url = bridge.orchestrator_url()

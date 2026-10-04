@@ -24,9 +24,10 @@ from typing import Any
 
 import httpx
 
-from . import planner
+from . import chat, planner
 from .models import PlanRequest
 from .places import resolve_place
+from .planner import check_refusal
 
 logger = logging.getLogger("proxiprompt.bridge")
 
@@ -72,6 +73,15 @@ def _sources_text(data: dict[str, Any]) -> str | None:
     return None
 
 
+def _freshness_text(data: dict[str, Any]) -> str | None:
+    for key in ("freshest_age_s", "newest_age_s"):
+        v = data.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+            return f"newest {chat.age_text(float(v))}"
+    f = data.get("freshness")
+    return f if isinstance(f, str) and f else None
+
+
 def format_result(data: dict[str, Any]) -> str:
     status = str(data.get("status", "")).lower()
     if status == "refused":
@@ -79,16 +89,27 @@ def format_result(data: dict[str, Any]) -> str:
     if status in ("failed", "cancelled"):
         return data.get("message") or "Something went wrong while answering that. Please try again."
     headline = data.get("headline") or data.get("message")
-    if status == "insufficient" and not headline:
-        headline = "Not enough fresh evidence to answer that right now."
-    parts = [str(headline or "No answer yet.")]
+    if status == "insufficient":
+        lines = [str(headline or "Not enough fresh evidence to answer that right now.")]
+        lines.append("I only answer from reports by people physically near the place, so I won't guess.")
+        return "\n".join(lines)
+    lines = [str(headline or "No answer yet.")]
+    rec = data.get("recommendation")
+    if isinstance(rec, str) and rec:
+        lines.append(f"Recommendation: {rec}")
     conf = _confidence_text(data)
     if conf:
-        parts.append(f"Confidence: {conf}.")
+        lines.append(f"Confidence: {conf}")
     src = _sources_text(data)
-    if src:
-        parts.append(f"Sources: {src}.")
-    return " ".join(parts)
+    fresh = _freshness_text(data)
+    if src and re.search(r"\d", src):
+        lines.append(f"Based on {src}" + (f" ({fresh})" if fresh else ""))
+    elif src:
+        lines.append(f"Sources: {src}" + (f" ({fresh})" if fresh else ""))
+    elif fresh:
+        lines.append(f"Freshness: {fresh}")
+    lines.append("Answers come from people physically near the place, not from guesses.")
+    return "\n".join(lines)
 
 
 async def _poll_once(client: httpx.AsyncClient, base_url: str, qid: str) -> dict[str, Any] | None:
@@ -103,7 +124,7 @@ async def _poll_once(client: httpx.AsyncClient, base_url: str, qid: str) -> dict
 
 
 async def poll_until_done(base_url: str, qid: str, *, total_s: float, interval_s: float = POLL_INTERVAL_S,
-                           client: httpx.AsyncClient | None = None) -> str | None:
+                           client: httpx.AsyncClient | None = None, late: bool = False) -> str | None:
     """Keep asking the orchestrator until the query finishes. None if it never does."""
     own = client is None
     client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT_S)
@@ -113,7 +134,8 @@ async def poll_until_done(base_url: str, qid: str, *, total_s: float, interval_s
             await asyncio.sleep(interval_s)
             last = await _poll_once(client, base_url, qid)
             if last and str(last.get("status", "")).lower() in _DONE:
-                return format_result(last)
+                text = format_result(last)
+                return f"Update on your earlier question:\n{text}" if late else text
         return None
     finally:
         if own:
@@ -152,8 +174,8 @@ async def run_orchestrated(text: str, sender: str, base_url: str,
                 return format_result(last), None
         progress = last.get("progress") or last.get("message") or "asking people near the place"
         return (
-            f"Still working on it ({progress}). Real people near the place are being asked, which can take a minute "
-            f"or two. I'll send the answer here when it is ready."
+            f"Still working on it: {progress}. Real people near the place are being asked, which can take a minute "
+            f"or two.\nI'll send the answer here when it is ready."
         ), str(qid)
     finally:
         if own:
@@ -190,8 +212,23 @@ _LEADING_MENTIONS = re.compile(r"^(?:\s*@[\w.-]+)+\s*")
 
 
 async def handle_chat_text(text: str, sender: str) -> tuple[str, str | None]:
-    """Reply text, and the orchestrator query id when a later answer should be pushed back to the chat."""
-    text = _LEADING_MENTIONS.sub("", text or "")
+    """Reply text, and the orchestrator query id when a later answer should be pushed back to the chat.
+
+    Chit-chat, help, place-list and no-place messages are answered locally and never create a query.
+    """
+    text = _LEADING_MENTIONS.sub("", text or "").strip()
+    if resolve_place(text) is None:
+        kind = chat.classify(text)
+        if kind == "list":
+            return chat.places_reply(), None
+        if kind in ("empty", "greeting", "help"):
+            return chat.help_reply(), None
+        refusal = check_refusal(text)
+        if refusal:
+            return refusal, None
+        if await chat.llm_is_chitchat(text):
+            return chat.help_reply(), None
+        return chat.no_place_reply(), None
     url = orchestrator_url()
     if url:
         return await run_orchestrated(text, sender, url)
