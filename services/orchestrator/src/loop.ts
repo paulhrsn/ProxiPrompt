@@ -132,12 +132,20 @@ export async function tick(conn: Conn): Promise<void> {
   }
   const now = nowMs();
 
-  await ingestResponses(conn, cfg, now);
-  await summarizePendingPosts(conn, cfg, now);
-  await processPlanningQueries(conn, cfg, now);
-  await advanceCollectingJobs(conn, cfg, now);
-  await updateLateAnswers(conn, cfg, now);
-  await evaluateWatches(conn, now);
+  const stages: [string, () => Promise<void>][] = [
+    ["ingestResponses", () => ingestResponses(conn, cfg, now)],
+    ["summarizePendingPosts", () => summarizePendingPosts(conn, cfg, now)],
+    ["processPlanningQueries", () => processPlanningQueries(conn, cfg, now)],
+    ["advanceCollectingJobs", () => advanceCollectingJobs(conn, cfg, now)],
+    ["updateLateAnswers", () => updateLateAnswers(conn, cfg, now)],
+    ["evaluateWatches", () => evaluateWatches(conn, now)],
+  ];
+  for (const [name, run] of stages) {
+    const t0 = Date.now();
+    await run();
+    const ms = Date.now() - t0;
+    if (ms > 2000) console.log(`slow tick stage ${name}: ${ms} ms`);
+  }
 }
 
 async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
