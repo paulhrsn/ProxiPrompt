@@ -78,6 +78,7 @@ SpacetimeAuth client `client_034a2MZhz5kQgykZquPJIl` set in git-ignored `apps/we
 | W3 | Simulated neighbors: bot residents that answer prompts so a solo presenter can demo | `feat/demo-neighbors` | own DB `proxiprompt-bots`, orchestrator :8085 | **merged** (`bd0afb1`) |
 | W4 | Submission kit: DEMO.md, DEVPOST.md, Agentverse README, root README | `docs/submission-kit` | docs only | **merged** (`f89b9c7`) |
 | W1 | Make e2e pass with SpacetimeAuth on (tests take the "Use demo session" path), then hands-on demo polish via browser | `fix/demo-polish` | `proxiprompt-test`, ports 8081/5174 | dispatched |
+| W7 | MainCloud rehearsal: orchestrator + agent + neighbors + scripted asker on `proxiprompt-mhacks-test`; fix what breaks in the cloud path | `test/maincloud-rehearsal` | MainCloud test DB only, orchestrator :8086 | dispatched |
 | W6 | ASI:One chat polish: greetings/help, unknown-place guidance, known places list, well-formatted answers | `feat/asi-chat-polish` | `services/agent` only, unit tests, own agent port 8093 if needed | dispatched |
 
 Events:
