@@ -6,6 +6,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="${HOME}/.local/bin:${PATH}"
+# Service secrets (ASI_ONE_API_KEY, VAPID keys) live in git-ignored .env files; nothing else
+# loads them, so export them here before the defaults below.
+for envfile in "$ROOT/services/agent/.env" "$ROOT/services/orchestrator/.env"; do
+  if [[ -f "$envfile" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$envfile"
+    set +a
+  fi
+done
 export DEMO_MODE="${DEMO_MODE:-1}"
 export ENABLE_BLUESKY="${ENABLE_BLUESKY:-0}"
 export AGENT_URL="${AGENT_URL:-http://127.0.0.1:8001}"

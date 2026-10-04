@@ -187,7 +187,7 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 - Spacetime `start` dies when the launching shell exits unless you keep that process (use a dedicated terminal).
 - **One orchestrator per database.** `scripts/e2e.ts` drives `tick()` in-process, so running it while `pnpm dev`'s orchestrator is live makes the two workers race; the tells are "Invalid job transition done -> done" and "Recipient … was already asked about this job". Stop the dev stack before running e2e. SPEC §2 assumes a single worker; concurrent workers are not a supported configuration.
 - Physical iOS Web Push is unwired until VAPID keys exist; e2e used `https://push.example/…` dummy devices so routing still required `register_device`.
-- ASI:One LLM path untested live (`ASI_ONE_API_KEY` unset), including the §9.1 input review; only mocked tests cover it. Chat Protocol is implemented; Agentverse registration is not.
+- ASI:One LLM path verified live 2026-10-03 (plan + §9.1 review: slang rewritten, ad refused). `scripts/dev.sh` now sources `services/agent/.env` and `services/orchestrator/.env`; before that nothing loaded them. Chat Protocol is implemented; Agentverse registration is not.
 - First empty `claim_service_role` wins. After a `publish` that wipes data, delete `spacetimedb/.local/worker-token-*` or reuse that token.
 - Google Places UI is catalog search only until the Maps key is set (no Maps JS wired yet — catalog covers the judged demo).
 - Reciprocal priority P1 experiment not built.
