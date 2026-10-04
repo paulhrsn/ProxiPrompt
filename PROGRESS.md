@@ -225,7 +225,7 @@ Rules (fetch.ai/events/m-hacks): agent registered on Agentverse, Chat Protocol, 
 
 ### Best Use of SpacetimeDB: strong core, three visible gaps
 Already strong (say this in the pitch):
-- SpacetimeDB is the single authoritative state: 15 tables, 34 reducers (18 client, 16 worker), 23 views.
+- SpacetimeDB is the single authoritative state: 17 tables, 34 reducers (18 client, 16 worker), 23 views.
 - All safety rules live in reducers, not the app: query/job state machine, one response per recipient, recipient cap (20), requester exclusion, location freshness, cooldowns, rate limits (incl. 60/h service relay), blocklist, admin hide, service-role authorization, dev wipe.
 - Privacy by views: exact coordinates and responses are private tables; the public reads only views (`svc_*` for the worker, `my_*` per user, public Pulse/place views). Guardrails check that other users and the public cannot read private rows.
 - Real-time everywhere: the PWA timeline, prompt pop-up and Pulse are live subscriptions; the orchestrator is itself a subscriber reacting to row changes.
