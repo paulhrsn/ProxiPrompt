@@ -105,6 +105,7 @@ Events:
 - W10 dispatched (`fix/judge-polish-2`): the five W1 leftovers.
 - W10 merged (`a0ccfad`, `9043496`, `dd734d0`, `f2d623c`): (1) contradiction-aware confidence in `packages/core` scoring (spread 2 -> Medium cap, 3+ -> Low; "Reports disagree" caveat; `conflicts` in answer JSON; SPEC §8 updated) plus a real bug: a late conflicting update tried illegal `answered -> insufficient` and left a stale answer, now stays `answered`; (2) "Details" raw JSON replaced by "Where this comes from" + "Why X confidence"; (3) post composer defaults to the claimed/demo place; (4) watch card shows its first check, companion question hidden from Recent; (5) "Marked still true." fades after 3 s. New specs `e2e/conflict.spec.ts`, `e2e/posts.spec.ts`.
 - **Final verification on main (session 16):** `pnpm e2e:browser` 7/7 (1.5 min), core 138, orchestrator 83, agent 186, web typecheck clean, 0 dashes in W10's diff.
+- Session 16 end: ran `pnpm stop` so `pnpm dev` owns all ports (the live Agentverse agent is offline until `pnpm dev` starts it again from `services/agent/.env`). All lanes removed; main == origin/main.
 
 ## Work log addendum: MainCloud (2026-10-04, session 15, after Paul's `spacetime login`)
 - Published to MainCloud: live DB **`proxiprompt-mhacks`** (dashboard https://spacetimedb.com/proxiprompt-mhacks) and test DB `proxiprompt-mhacks-test`. New names, not `proxiprompt`, because worker tokens are stored per DB name in `spacetimedb/.local/worker-token-<db>`; reusing the local name would mix local and cloud tokens.
