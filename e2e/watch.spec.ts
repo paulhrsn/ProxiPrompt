@@ -30,6 +30,7 @@ test("notify me when seats open, then the watch reports it", async ({ browser })
     await asker.getByLabel("Question").fill("Tell me when seats open up");
     await asker.getByRole("button", { name: "Notify me when" }).click();
     await expect(asker).toHaveURL(/#\/q\/\d+/, { timeout: 15_000 });
+    await expect(asker.getByTestId("watch-note")).toBeVisible();
 
     await asker.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Questions" }).click();
     await expect(asker.getByRole("heading", { name: "Watching" })).toBeVisible({ timeout: 20_000 });

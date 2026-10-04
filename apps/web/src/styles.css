@@ -484,7 +484,7 @@ button:disabled { cursor: default; }
 input, select { font-size: 16px; }
 .app { max-width: 460px; padding: env(safe-area-inset-top) 24px 28px; background: var(--bg); }
 .app.with-tabs { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
-.app-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-right: 53px; margin-bottom: 6px; }
+.app-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .brand { display: inline-flex; align-items: center; gap: 0; text-decoration: none; color: var(--ink); font-size: 19px; font-weight: 750; letter-spacing: -.8px; }
 .community-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
 h1 { font-family: var(--sans); font-size: 34px; font-weight: 750; letter-spacing: -.03em; line-height: 1.12; margin-bottom: 12px; }
