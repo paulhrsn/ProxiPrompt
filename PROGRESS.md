@@ -61,7 +61,7 @@ State at handoff:
 - ~~VAPID keys~~ done. Still human: install PWA on iPhones (iOS ≥16.4) from the HTTPS ngrok URL via Share > Add to Home Screen, open from the icon, You tab > Enable notifications.
 - ~~ASI:One API key, Agentverse mailbox~~ done 2026-10-04. Still human: register the handle `proxipromptagent` on the Agentverse profile (not yet shown publicly), make a public ASI:One shared chat link of a fully answered workflow, record the demo video. `@proxiprompt` belongs to the team's ASI:One personal AI (an unrelated chatbot persona created at ASI:One sign-up; do not delete it, its link to the account/API key is unverified).
 - Agentverse profile: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile
-- `spacetime login` + MainCloud publish; Vercel + Railway deploys.
+- ~~`spacetime login` + MainCloud publish~~ done 2026-10-04 (`proxiprompt-mhacks`). Vercel + Railway deploys still open.
 - Fetch.ai ASI Submission Agent + Devpost.
 
 ## Decisions log
@@ -281,7 +281,7 @@ Already strong (say this in the pitch):
 - Clocks live in the database. A job deadline, a prompt expiry, and a 10-minute cleanup of old observations and rate buckets all run with no worker doing the work. 72 guardrail checks cover this (`pnpm --filter @proxiprompt/spacetimedb guardrails`).
 Gaps, in order of judge impact:
 1. **Auth is anonymous "dev auth".** `VITE_SPACETIMEAUTH_CLIENT_ID` unset, so SpacetimeAuth magic-link login is not in use. Needs a SpacetimeAuth project (human) then a short wiring check.
-2. **Runs on local `spacetime start`, not MainCloud.** `spacetime login` + publish to MainCloud (human login) makes it a real hosted demo.
+2. ~~Runs on local `spacetime start`, not MainCloud.~~ Done 2026-10-04: `proxiprompt-mhacks` on MainCloud, `STDB_TARGET=maincloud pnpm dev`.
 
 
 ## 2026-10-04 — Mobile UI overhaul
