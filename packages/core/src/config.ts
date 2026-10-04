@@ -15,8 +15,8 @@ export interface CoreConfig {
 export function getConfig(demoMode: boolean): CoreConfig {
   return demoMode
     ? {
-        FIRST_WAVE: 2,
-        MAX_RECIPIENTS: 5,
+        FIRST_WAVE: 10,
+        MAX_RECIPIENTS: 20,
         EXPAND_AFTER_S: 10,
         JOB_DEADLINE_S: 30,
         LATE_ACCEPT_S: 120,
@@ -26,8 +26,8 @@ export function getConfig(demoMode: boolean): CoreConfig {
         SUFFICIENT_SCORE: 0.6,
       }
     : {
-        FIRST_WAVE: 2,
-        MAX_RECIPIENTS: 5,
+        FIRST_WAVE: 10,
+        MAX_RECIPIENTS: 20,
         EXPAND_AFTER_S: 30,
         JOB_DEADLINE_S: 120,
         LATE_ACCEPT_S: 600,

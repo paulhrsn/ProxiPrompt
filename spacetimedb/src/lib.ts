@@ -5,7 +5,7 @@ import { Identity, Timestamp } from 'spacetimedb';
 // ---------- constants ----------
 /** A recipient's location must be this fresh (seconds, relative to ctx.timestamp) when a batch is created. */
 export const LOCATION_MAX_AGE_S = 21600;
-export const MAX_RECIPIENTS_PER_JOB = 5;
+export const MAX_RECIPIENTS_PER_JOB = 20;
 export const QUERY_RATE_LIMIT_PER_HOUR = 10;
 // The service identity relays ASI:One chat questions (SPEC §9); its own, larger budget caps that relay.
 export const SERVICE_QUERY_RATE_LIMIT_PER_HOUR = 60;

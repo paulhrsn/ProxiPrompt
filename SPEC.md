@@ -124,8 +124,8 @@ Timing config (`DEMO_MODE` env toggles):
 
 | setting | normal | demo |
 |---|---|---|
-| FIRST_WAVE | 2 | 2 |
-| MAX_RECIPIENTS | 5 | 5 |
+| FIRST_WAVE | 10 | 10 |
+| MAX_RECIPIENTS | 20 | 20 |
 | EXPAND_AFTER_S | 30 | 10 |
 | JOB_DEADLINE_S | 120 | 30 (answer accepted until 120) |
 | RESPONDER_COOLDOWN_S | 600 | 60 |

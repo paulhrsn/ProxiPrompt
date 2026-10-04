@@ -60,6 +60,11 @@ Previously:
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
 ## Work log
+- 2026-10-03 session 8 (Paul: pings slow, Shiyuan never got one, coords ugly):
+  1. **Test users took the real team's slots.** 61 throwaway `_mut` users from e2e/probe runs still had fresh (6h demo window) locations claimed at Duderstadt; 3 of the 5 recipients for query 33 were test users, so Shiyuan was never picked. Deleted their `user_location` rows from local `proxiprompt`; `scripts/e2e.ts` now refuses the live DB unless `STDB_DB=proxiprompt-test` (or `E2E_ALLOW_LIVE_DB=1`).
+  2. **Waves too small and slow.** `FIRST_WAVE` 2 -> 10, `MAX_RECIPIENTS` / `MAX_RECIPIENTS_PER_JOB` 5 -> 20 (Paul's call). Guardrail cap check updated (63/63).
+  3. **Coordinates removed** from the You-tab location label (`describeLocation` names places only).
+  - Still true: no push devices registered (VAPID unset), so phones only see prompts while the app is open.
 - 2026-10-03 session 7 (Paul's screenshot: responder card for "Is there anyone named shiyuen at the dude rn?"):
   1. **Person-locating question went out to responders.** The keyword guard only caught capitalised names. New `_RE_PERSON_NAMED` refuses "anyone/someone/a guy/the girl ... named/called". 7 new refusal/non-refusal cases.
   2. **Presence radio group read as a pointless question.** Routing already picks nearby people; the control only exists where GPS cannot separate neighbours (Duderstadt/Pierpont, floors). `AnswerForm` now renders it as a ghost "I'm not at {place}" skip button that submits `not_here`; the data sent is unchanged.

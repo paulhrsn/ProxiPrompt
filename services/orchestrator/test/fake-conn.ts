@@ -17,7 +17,7 @@
 import { Identity, Timestamp } from "spacetimedb";
 
 // Mirrors spacetimedb/src/lib.ts — kept honest by the drift test in loop.test.ts.
-export const MAX_RECIPIENTS_PER_JOB = 5;
+export const MAX_RECIPIENTS_PER_JOB = 20;
 export const LOCATION_MAX_AGE_S = 21600;
 
 export const QUERY_TRANSITIONS: Record<string, readonly string[]> = {

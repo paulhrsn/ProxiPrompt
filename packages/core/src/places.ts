@@ -113,7 +113,6 @@ const NAMED_WITHIN_M = 400;
 const AMBIGUOUS_GAP_M = 80;
 
 export interface LocationDescription {
-  coords: string;
   /** Nearest catalog places inside the naming radius, nearest first. At most two. */
   places: CatalogPlace[];
   /** True when the two nearest buildings are too close to pick a winner. */
@@ -123,25 +122,23 @@ export interface LocationDescription {
 
 /**
  * Name a GPS fix from the catalog without claiming one building when two are
- * about equally close. The coordinates themselves are unchanged.
+ * about equally close. Labels name places only; raw coordinates mean nothing to a person.
  */
 export function describeLocation(lat: number, lng: number, places: readonly CatalogPlace[] = CATALOG_PLACES): LocationDescription {
-  const coords = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   const ranked = places
     .map((place) => ({ place, distanceM: haversineM(lat, lng, place.lat, place.lng) }))
     .filter((row) => row.distanceM < NAMED_WITHIN_M)
     .sort((a, b) => a.distanceM - b.distanceM);
   const first = ranked[0];
   const second = ranked[1];
-  if (!first) return { coords, places: [], ambiguous: false, label: coords };
+  if (!first) return { places: [], ambiguous: false, label: "Not near a known place" };
   const ambiguous = !!second && second.distanceM - first.distanceM < AMBIGUOUS_GAP_M && second.distanceM < Math.max(first.distanceM * 1.45, first.distanceM + 45);
   if (ambiguous && second) {
     return {
-      coords,
       places: [first.place, second.place],
       ambiguous: true,
-      label: `Between ${first.place.name} and ${second.place.name} (${coords})`,
+      label: `Between ${first.place.name} and ${second.place.name}`,
     };
   }
-  return { coords, places: [first.place], ambiguous: false, label: `Near ${first.place.name} (${coords})` };
+  return { places: [first.place], ambiguous: false, label: `Near ${first.place.name}` };
 }

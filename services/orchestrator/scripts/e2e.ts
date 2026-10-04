@@ -8,10 +8,16 @@
  * "Invalid job transition done -> done" and "Recipient … was already asked about this job".
  * The design is a single worker (SPEC §2), so stop the dev stack first:
  *   pnpm stop && spacetime start &   # plus the agent on :8001
- * Run:  AGENT_URL=http://127.0.0.1:8001 pnpm exec tsx scripts/e2e.ts
+ * Run:  STDB_DB=proxiprompt-test AGENT_URL=http://127.0.0.1:8001 pnpm exec tsx scripts/e2e.ts
+ * It refuses the live `proxiprompt` database: its throwaway users keep fresh locations at real
+ * catalog places, so they were picked as responders ahead of the real team.
  */
 import { CATALOG_PLACES } from "@proxiprompt/core";
 import { connect, subscribe, sleep, eventually, errMessage, readWorkerToken, writeWorkerToken, URI, DB } from "../../../spacetimedb/scripts/lib.js";
+
+if (DB === "proxiprompt" && process.env.E2E_ALLOW_LIVE_DB !== "1") {
+  throw new Error("e2e writes test users into the database; run it with STDB_DB=proxiprompt-test (or E2E_ALLOW_LIVE_DB=1)");
+}
 import { tick } from "../src/loop.js";
 
 const shapiro = CATALOG_PLACES.find((p) => p.id === "shapiro-undergraduate-library")!;

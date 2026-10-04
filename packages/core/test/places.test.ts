@@ -26,8 +26,8 @@ describe("describeLocation", () => {
     const reading = describeLocation(42.2909, -83.7157);
     expect(reading.ambiguous).toBe(true);
     expect(reading.places.map((p) => p.id).sort()).toEqual(["duderstadt-center", "pierpont-commons"]);
-    expect(reading.label.startsWith("Between ")).toBe(true);
-    expect(reading.label).toContain("42.2909, -83.7157");
+    // Raw coordinates are noise to a person; the label names places only.
+    expect(reading.label).toBe("Between Pierpont Commons and Duderstadt Center"); // nearest first
   });
 
   it("names a building when the fix is on that building and the neighbor is clearly farther", () => {
@@ -35,14 +35,14 @@ describe("describeLocation", () => {
     const reading = describeLocation(shapiro.lat, shapiro.lng);
     expect(reading.ambiguous).toBe(false);
     expect(reading.places.map((p) => p.id)).toEqual(["shapiro-undergraduate-library"]);
-    expect(reading.label.startsWith("Near Shapiro")).toBe(true);
+    expect(reading.label).toBe("Near Shapiro Undergraduate Library");
   });
 
-  it("returns only coordinates when nothing in the catalog is nearby", () => {
+  it("says no known place is nearby instead of printing coordinates", () => {
     const reading = describeLocation(40, -80);
     expect(reading.places).toEqual([]);
     expect(reading.ambiguous).toBe(false);
-    expect(reading.label).toBe("40.0000, -80.0000");
+    expect(reading.label).toBe("Not near a known place");
   });
 });
 

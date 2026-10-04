@@ -1066,7 +1066,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         const reading = gpsPoint && !demo ? describeLocation(gpsPoint.lat, gpsPoint.lng) : null;
         const claimNear = claim && gpsPoint && haversineM(claim.lat, claim.lng, gpsPoint.lat, gpsPoint.lng) <= CLAIM_VALID_M ? claim : null;
         const claimed = claimNear?.id ? CATALOG_PLACES.find((p) => p.id === claimNear.id) : undefined;
-        const label = claimed ? `${claimed.name} (${reading?.coords})` : reading?.label;
+        const label = claimed ? claimed.name : reading?.label;
         // Buildings 70-80 m apart are inside GPS error, so offer the choice whenever the
         // nearest one has a close neighbour — not only when the two happen to be near-tied.
         const nearbyOptions = reading?.places[0]

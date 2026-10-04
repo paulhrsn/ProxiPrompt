@@ -389,10 +389,12 @@ await check('batch to B and C accepted; job.recipients_count = 2', async () => {
 });
 await check('duplicate recipient across batches of one job rejected', () =>
   rejects(R(W).workerCreatePromptBatch(batchArgs([B])), /already asked/));
-await check('max 5 recipients per job: 2 + 3 ok, 6th rejected', async () => {
-  await R(W).workerCreatePromptBatch(batchArgs([R3, R4, R5]));
-  await eventually(() => rows(W, 'svcEvidenceJob').find((x) => x.id === job && x.recipientsCount === 5), 3000, 'count=5');
-  return rejects(R(W).workerCreatePromptBatch(batchArgs([R6])), /at most 5 recipients/);
+await check('max 20 recipients per job: 2 + 18 ok, 21st rejected', async () => {
+  const extra: Client[] = [];
+  for (let i = 0; i < 15; i++) extra.push(track(await newUser(`cap${i}`)));
+  await R(W).workerCreatePromptBatch(batchArgs([R3, R4, R5, ...extra]));
+  await eventually(() => rows(W, 'svcEvidenceJob').find((x) => x.id === job && x.recipientsCount === 20), 5000, 'count=20');
+  return rejects(R(W).workerCreatePromptBatch(batchArgs([R6])), /at most 20 recipients/);
 });
 await check("a recipient's own query cannot be attached to the job they were asked about", async () => {
   await eventually(() => rows(B, 'myQueries').length >= 1, 3000);
