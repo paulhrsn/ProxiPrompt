@@ -2,7 +2,16 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { DbConnection } from "../../../spacetimedb/bindings/index.js";
 import { useDevMode, useOidc } from "./auth";
 
-const URI = import.meta.env.VITE_SPACETIMEDB_URI || "ws://127.0.0.1:3000";
+function spacetimeUri(): string {
+  const host = location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") {
+    return import.meta.env.VITE_SPACETIMEDB_URI || "ws://127.0.0.1:3000";
+  }
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}`;
+}
+
+const URI = spacetimeUri();
 const DB = import.meta.env.VITE_SPACETIMEDB_DB || "proxiprompt";
 const TOKEN_KEY = "pp.token";
 

@@ -4,7 +4,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PORTS=(3000 8001 8080 5173)
+PORTS=(3000 8001 8080 5173 80)
 
 stop_port() {
   local port="$1"
@@ -16,12 +16,12 @@ stop_port() {
   fi
   echo "Stopping :$port ($pids)"
   # shellcheck disable=SC2086
-  kill $pids 2>/dev/null || true
+  kill $pids 2>/dev/null || sudo -n kill $pids 2>/dev/null || true
   sleep 0.4
   pids="$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
   if [[ -n "$pids" ]]; then
     # shellcheck disable=SC2086
-    kill -9 $pids 2>/dev/null || true
+    kill -9 $pids 2>/dev/null || sudo -n kill -9 $pids 2>/dev/null || true
     echo "Force-stopped :$port ($pids)"
   fi
 }

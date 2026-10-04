@@ -1,6 +1,14 @@
 import type { CoreConfig } from "./config";
 import { haversineM } from "./geo";
 
+/**
+ * A demo pin is the center of a chosen building. Adjacent catalog buildings
+ * (Duderstadt and Pierpont, Shapiro and Hatcher) are about 70 m apart, so a
+ * demo location only matches the building it was dropped on. 60 m still
+ * covers someone placed a few dozen meters from that building's pin.
+ */
+export const DEMO_MATCH_M = 60;
+
 export interface Candidate {
   userId: string;
   lat: number;
@@ -60,7 +68,7 @@ export function selectResponders(input: SelectInput): SelectResult {
 
     if (alreadyAsked.has(c.userId)) reject("already_asked");
     else if (nowMs - c.capturedAtMs > config.LOCATION_MAX_AGE_S * 1000) reject("stale_location");
-    else if (distanceM > radiusM) reject("out_of_radius");
+    else if (distanceM > (c.source === "demo" ? Math.min(radiusM, DEMO_MATCH_M) : radiusM)) reject("out_of_radius");
     else if (!c.hasActiveDevice) reject("no_device");
     else if (c.notificationsPaused) reject("paused");
     else if (

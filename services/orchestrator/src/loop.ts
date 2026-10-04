@@ -5,6 +5,7 @@ import {
   getDimension,
   scoreEvidence,
   nextWaveCount,
+  placePart,
   selectResponders,
   type PlanResponse,
   type ScoringObservation,
@@ -23,6 +24,8 @@ const processedQueries = new Set<string>();
 const processedResponses = new Set<string>();
 const processedPosts = new Set<string>();
 const jobLastWaveAt = new Map<string, number>();
+const jobHandledPasses = new Map<string, Set<string>>();
+const handledReactions = new Set<string>();
 const lastEmptyWaveAt = new Map<string, number>();
 const lastImpactPush = new Map<string, number>();
 
@@ -79,7 +82,12 @@ async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, no
     const controls = parseJson<Survey["controls"]>(batch.controlsJson, []);
     const job = rows(conn.db.svcEvidenceJob.iter()).find((j) => j.id === batch.jobId);
     const plan = job ? parseJson<PlanResponse>(job.planJson, null as unknown as PlanResponse) : null;
+    if (Object.values(answers).includes("not_here")) {
+      processedResponses.add(key);
+      continue;
+    }
     for (const [dim, value] of Object.entries(answers)) {
+      if (dim === "other:place_part" || value === "not_here") continue;
       const control = controls.find((c) => c.dimension_key === dim);
       const opt = control?.options.find((o) => o.value === value);
       const dimDef = getDimension(dim);
@@ -102,6 +110,66 @@ async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, no
     processedResponses.add(key);
     void cfg;
     void now;
+  }
+}
+
+function passResponseIds(conn: Conn, jobId: bigint): string[] {
+  const batchIds = new Set(rows(conn.db.svcPromptBatch.iter()).filter((b) => b.jobId === jobId).map((b) => b.id));
+  const ids: string[] = [];
+  for (const r of rows(conn.db.svcPromptResponse.iter())) {
+    if (!batchIds.has(r.batchId)) continue;
+    const answers = parseJson<Record<string, string>>(r.answersJson, {});
+    if (Object.values(answers).includes("not_here")) ids.push(String(r.id));
+  }
+  return ids;
+}
+
+async function applyPostReactions(
+  conn: Conn,
+  post: { id: bigint; placeId: string },
+  place: { lat: number; lng: number },
+  claims: { dimension: string; value_label: string; kind: string; proposed_ttl_s: number; ordinal: number | null }[],
+  now: number,
+) {
+  const comments = rows(conn.db.svcComment.iter()).filter((c) => c.postId === post.id && !c.deleted && !c.hidden);
+  for (const c of comments) {
+    const key = `react:${c.id}`;
+    if (handledReactions.has(key)) continue;
+    const text = c.text.trim().toLowerCase();
+    if (text !== "still true" && text !== "this changed") continue;
+    if (text === "this changed") {
+      const commentIds = new Set(comments.map((row) => `comment:${row.id}`));
+      for (const o of rows(conn.db.svcObservation.iter())) {
+        if (o.invalidated) continue;
+        if (o.sourceId === `post:${post.id}` || commentIds.has(o.sourceId)) {
+          await conn.reducers.workerInvalidateObservation({ observationId: o.id });
+        }
+      }
+    } else {
+      const loc = rows(conn.db.svcUserLocation.iter()).find((l) => l.identity.isEqual(c.author));
+      const verified =
+        !!loc &&
+        now - toMs(loc.capturedAt) < 1_800_000 &&
+        Math.hypot((loc.lat - place.lat) * 111_000, (loc.lng - place.lng) * 85_000) < 150;
+      for (const claim of claims) {
+        const ttl = claim.proposed_ttl_s || 900;
+        await conn.reducers.workerAddObservation({
+          placeId: post.placeId,
+          dimension: claim.dimension,
+          value: claim.value_label.toLowerCase().replace(/\s+/g, "_"),
+          valueLabel: claim.value_label,
+          ordinal: claim.ordinal ?? undefined,
+          kind: claim.kind,
+          sourceType: "comment",
+          sourceId: `comment:${c.id}`,
+          contributor: c.author,
+          verifiedNearby: verified,
+          observedAtMicros: c.createdAt.microsSinceUnixEpoch,
+          expiresAtMicros: toMicros(toMs(c.createdAt) + ttl * 1000),
+        });
+      }
+    }
+    handledReactions.add(key);
   }
 }
 
@@ -162,6 +230,7 @@ async function summarizePendingPosts(conn: Conn, now: number) {
           expiresAtMicros: toMicros(toMs(p.createdAt) + claim.proposed_ttl_s * 1000),
         });
       }
+      await applyPostReactions(conn, p, place, sum.claims, now);
       processedPosts.add(key);
     } catch (e) {
       console.warn("summarize post failed", p.id, (e as Error).message);
@@ -370,10 +439,25 @@ async function promptWave(
 
   const survey = plan.survey;
   if (!survey) return;
+  const question = (attached.map((q) => q.text.trim()).find(Boolean) || survey.question).slice(0, 300);
+  const part = placePart(question);
+  const controls = part
+    ? [
+        {
+          dimension_key: "other:place_part",
+          label: part.prompt,
+          options: [
+            { value: "here", label: "I can check", ordinal: 1 },
+            { value: "not_here", label: part.passLabel, ordinal: 0 },
+          ],
+        },
+        ...survey.controls.filter((c) => c.dimension_key !== "other:place_part"),
+      ]
+    : survey.controls;
   await conn.reducers.workerCreatePromptBatch({
     jobId,
-    question: (attached.map((q) => q.text.trim()).find(Boolean) || survey.question).slice(0, 300),
-    controlsJson: JSON.stringify(survey.controls),
+    question,
+    controlsJson: JSON.stringify(controls),
     expiresAtMicros: toMicros(now + cfg.PROMPT_EXPIRY_S * 1000),
     recipientIdentitiesJson: JSON.stringify(picked.selected.map((s) => s.userId)),
   });
@@ -451,6 +535,15 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
     if (score.sufficient) {
       for (const q of attached) await synthesizeQuery(conn, q.id, plan, place, obs, score, false);
       await conn.reducers.workerSetJobStatus({ jobId: job.id, status: "done", confidenceJson: JSON.stringify(score) });
+      continue;
+    }
+    const passIds = passResponseIds(conn, job.id);
+    const handled = jobHandledPasses.get(String(job.id)) ?? new Set<string>();
+    const freshPasses = passIds.filter((id) => !handled.has(id));
+    if (!pastDeadline && freshPasses.length > 0 && recips.length > 0 && recips.length < cfg.MAX_RECIPIENTS) {
+      for (const id of passIds) handled.add(id);
+      jobHandledPasses.set(String(job.id), handled);
+      await promptWave(conn, job.id, plan, place, cfg, now, "expand");
       continue;
     }
     if (!pastDeadline && recips.length > 0 && wantMore > 0) {

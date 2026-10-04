@@ -36,6 +36,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+if ! up "http://127.0.0.1:80/"; then
+  echo "macOS needs your password once so ngrok http 80 can reach the app."
+  sudo -v
+fi
+
 if ! up "http://127.0.0.1:3000/v1/identity"; then
   echo "Starting SpacetimeDB on :3000"
   spacetime start --listen-addr 127.0.0.1:3000 > /tmp/proxiprompt-spacetime.log 2>&1 &
@@ -68,6 +73,11 @@ for _ in $(seq 1 40); do
   up "http://127.0.0.1:5173/" && up "http://127.0.0.1:8001/health" && break
   sleep 0.25
 done
+
+if ! up "http://127.0.0.1:80/"; then
+  sudo node "$ROOT/scripts/forward80.mjs" &
+  pids+=($!)
+fi
 
 cat <<'EOF'
 

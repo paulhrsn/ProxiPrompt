@@ -28,6 +28,20 @@ function go(path: string) {
   location.hash = path;
 }
 
+const LAST_QUERY = "pp.lastQuery";
+const OPEN_QUERY = new Set(["planning", "clarifying", "collecting", "synthesizing"]);
+
+function askTarget(conn: Conn): string {
+  const queries = list(conn.db.myQueries.iter());
+  const active = queries
+    .filter((q) => OPEN_QUERY.has(q.status))
+    .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0];
+  if (active) return `/q/${active.id}`;
+  const last = sessionStorage.getItem(LAST_QUERY);
+  if (last && queries.some((q) => String(q.id) === last)) return `/q/${last}`;
+  return "/";
+}
+
 function toMs(ts: { microsSinceUnixEpoch: bigint } | undefined | null): number {
   if (!ts) return 0;
   return Number(ts.microsSinceUnixEpoch / 1000n);
@@ -77,7 +91,7 @@ export default function App() {
       {signedIn && profile && conn && route.name !== "respond" ? <PromptPing conn={conn} /> : null}
       {showTabs ? (
         <nav className="tabbar" aria-label="Primary">
-          <button type="button" className={tab === "ask" ? "tab on" : "tab"} onClick={() => go("/")}><Icon name="ask" />Ask</button>
+          <button type="button" className={tab === "ask" ? "tab on" : "tab"} onClick={() => conn && go(askTarget(conn))}><Icon name="ask" />Ask</button>
           <button type="button" className={tab === "posts" ? "tab on" : "tab"} onClick={() => go("/posts")}><Icon name="posts" />Posts</button>
           <button type="button" className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
         </nav>
@@ -161,15 +175,8 @@ function Onboard({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
 function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
   const [q, setQ] = useState("");
   const [place, setPlace] = useState<CatalogPlace | null>(CATALOG_PLACES[0]);
-  const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-
-  const suggestions = useMemo(() => {
-    const t = filter.toLowerCase();
-    if (!t) return CATALOG_PLACES.slice(0, 6);
-    return CATALOG_PLACES.filter((p) => `${p.name} ${p.aliases.join(" ")}`.toLowerCase().includes(t)).slice(0, 8);
-  }, [filter]);
 
   async function ask() {
     if (!place || q.trim().length < 3) return;
@@ -203,19 +210,7 @@ function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> })
         <h1>{place?.name ?? "Where?"}</h1>
         <p>Ask someone who is there.</p>
       </div>
-      <label className="label">
-        Place
-        <input className="input" placeholder={place ? "Change place" : "Search places"} value={filter} onChange={(e) => { setFilter(e.target.value); setPlace(null); }} />
-        {filter ? (
-          <ul className="suggest" role="listbox">
-            {suggestions.map((p) => (
-              <li key={p.id} role="option" onClick={() => { setPlace(p); setFilter(""); }}>
-                {p.name}<small>{p.address}</small>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </label>
+      <PlaceField place={place} onPlace={setPlace} />
       <label className="label">
         Question
         <textarea className="input" rows={3} placeholder="What’s it like there right now?" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -226,11 +221,94 @@ function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> })
   );
 }
 
-function Posts({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
+type Conn = NonNullable<ReturnType<typeof useDb>["conn"]>;
+
+function placeLabel(conn: Conn, id: string): string {
+  return list(conn.db.place.iter()).find((p) => p.id === id)?.name ?? CATALOG_PLACES.find((p) => p.id === id)?.name ?? id;
+}
+
+function catalogPlaceFor(conn: Conn, id: string): CatalogPlace | null {
+  const known = CATALOG_PLACES.find((p) => p.id === id);
+  if (known) return known;
+  const row = list(conn.db.place.iter()).find((p) => p.id === id);
+  if (!row) return null;
+  return { id: row.id, name: row.name, category: row.category, lat: row.lat, lng: row.lng, address: row.address, community: row.community, aliases: [] };
+}
+
+function PlaceField({
+  place,
+  onPlace,
+  label = "Place",
+  placeholder,
+}: {
+  place: CatalogPlace | null;
+  onPlace: (place: CatalogPlace | null) => void;
+  label?: string;
+  placeholder?: string;
+}) {
+  const [filter, setFilter] = useState("");
+  const [remote, setRemote] = useState<CatalogPlace[]>([]);
+  const suggestions = useMemo(() => {
+    const t = filter.trim().toLowerCase();
+    const local = t
+      ? CATALOG_PLACES.filter((p) => `${p.name} ${p.aliases.join(" ")} ${p.address}`.toLowerCase().includes(t)).slice(0, 6)
+      : [];
+    const seen = new Set(local.map((p) => p.id));
+    return [...local, ...remote.filter((p) => !seen.has(p.id))].slice(0, 8);
+  }, [filter, remote]);
+  useEffect(() => {
+    const q = filter.trim();
+    if (q.length < 2) {
+      setRemote([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      const local = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+      const base = local ? ((import.meta.env.VITE_ORCH_URL as string | undefined) || "http://127.0.0.1:8080") : location.origin;
+      fetch(`${base}/places?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+        .then((res) => res.json())
+        .then((data: { places?: CatalogPlace[] }) => setRemote(data.places ?? []))
+        .catch(() => setRemote([]));
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [filter]);
+  return (
+    <label className="label">
+      {label}
+      <input
+        className="input"
+        placeholder={placeholder ?? (place ? "Change place" : "Search places")}
+        value={filter}
+        onChange={(e) => {
+          setFilter(e.target.value);
+          if (e.target.value) onPlace(null);
+        }}
+      />
+      {filter.trim().length >= 2 ? (
+        <ul className="suggest" role="listbox">
+          {suggestions.length ? suggestions.map((p) => (
+            <li key={p.id}>
+              <button type="button" role="option" onClick={() => { onPlace(p); setFilter(""); }}>
+                {p.name}<small>{p.address}</small>
+              </button>
+            </li>
+          )) : <li className="empty-suggest">No matching place</li>}
+        </ul>
+      ) : null}
+    </label>
+  );
+}
+
+function Posts({ conn }: { conn: Conn }) {
   const [sort, setSort] = useState<"useful" | "recent">("useful");
+  const [feedId, setFeedId] = useState<string | null>(null);
   const now = Date.now();
   const posts = useMemo(() => {
-    const raw = list(conn.db.pulsePosts.iter()).filter((p) => p.community === DEFAULT_COMMUNITY);
+    const raw = list(conn.db.pulsePosts.iter()).filter((p) => p.community === DEFAULT_COMMUNITY && (!feedId || p.placeId === feedId));
     const mapped = raw.map((p) => {
       const claims = (() => {
         try {
@@ -252,10 +330,16 @@ function Posts({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }
           .map((c) => ({ atMs: toMs(c.createdAt) })),
         nowMs: now,
       });
-      return { ...p, maxFreshness: note.maxFreshness, verifiedNearby: false, recentSubstantiveComments: Number(p.commentCount), createdAtMs: toMs(p.createdAt), id: String(p.id) };
+      return { ...p, id: String(p.id), postId: p.id, maxFreshness: note.maxFreshness, verifiedNearby: false, recentSubstantiveComments: Number(p.commentCount), createdAtMs: toMs(p.createdAt) };
     });
     return rankPosts(mapped, sort, now);
-  }, [conn, sort, now]);
+  }, [conn, sort, now, feedId]);
+  const feedIds = useMemo(() => {
+    const ids = new Set(list(conn.db.pulsePosts.iter()).filter((p) => p.community === DEFAULT_COMMUNITY).map((p) => p.placeId));
+    if (feedId) ids.add(feedId);
+    return [...ids].sort((a, b) => placeLabel(conn, a).localeCompare(placeLabel(conn, b)));
+  }, [conn, feedId]);
+  const feedPlace = feedId ? catalogPlaceFor(conn, feedId) : null;
 
   return (
     <section>
@@ -266,21 +350,21 @@ function Posts({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }
           <button type="button" role="tab" aria-selected={sort === "recent"} className={sort === "recent" ? "on" : ""} onClick={() => setSort("recent")}>Recent</button>
         </div>
       </div>
-      <ComposerPost conn={conn} />
+      {feedIds.length ? (
+        <div className="chips" role="tablist" aria-label="Place feed">
+          <button type="button" role="tab" aria-selected={!feedId} className={feedId ? "" : "on"} onClick={() => setFeedId(null)}>All places</button>
+          {feedIds.map((id) => (
+            <button type="button" role="tab" aria-selected={feedId === id} key={id} className={feedId === id ? "on" : ""} onClick={() => setFeedId(id)}>{placeLabel(conn, id)}</button>
+          ))}
+        </div>
+      ) : null}
+      <ComposerPost conn={conn} lockedPlace={feedPlace ?? undefined} onPosted={(p) => setFeedId(p.id)} />
       {posts.map((p) => (
-        <article className="card" key={p.id} onClick={() => go(`/place/${p.placeId}`)}>
-          <div className="meta">
-            <span>{list(conn.db.place.iter()).find((x) => x.id === p.placeId)?.name ?? p.placeId}</span>
-            <span>{formatAge((now - p.createdAtMs) / 1000)}</span>
-          </div>
-          <p className="body">{p.text}</p>
-          {p.summary ? <p>{p.summary}</p> : null}
-          {p.freshnessNote ? <p className={`note ${p.freshnessState}`}>{p.freshnessNote}</p> : null}
-        </article>
+        <PostCard key={p.id} conn={conn} post={p} placeName={placeLabel(conn, p.placeId)} showPlace={!feedId} onSelectPlace={setFeedId} />
       ))}
       {!posts.length ? (
         <div className="empty">
-          <h2>No posts yet</h2>
+          <h2>{feedPlace ? `No posts at ${feedPlace.name}` : "No posts yet"}</h2>
           <p>Share what a place is like right now.</p>
         </div>
       ) : null}
@@ -288,36 +372,155 @@ function Posts({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }
   );
 }
 
-function ComposerPost({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
+function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace?: CatalogPlace; onPosted?: (place: CatalogPlace) => void }) {
   const [text, setText] = useState("");
-  const [place, setPlace] = useState(CATALOG_PLACES[0]);
+  const [place, setPlace] = useState<CatalogPlace | null>(null);
   const [attr, setAttr] = useState<"anonymous" | "profile">("anonymous");
   const [open, setOpen] = useState(false);
-  if (!open) return <button className="btn ghost" onClick={() => setOpen(true)}>Post an update</button>;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const chosen = lockedPlace ?? place;
+  if (!open) return <button className="text" type="button" onClick={() => { setErr(""); setOpen(true); }}>Post an update</button>;
   return (
-    <div className="composer">
-      <label className="label">Place
-      <select className="input" value={place.id} onChange={(e) => setPlace(CATALOG_PLACES.find((p) => p.id === e.target.value) ?? place)}>
-        {CATALOG_PLACES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
+    <form
+      className="composer"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!chosen || busy || text.trim().length < 1) return;
+        setBusy(true);
+        setErr("");
+        try {
+          await conn.reducers.upsertPlace({ id: chosen.id, name: chosen.name, category: chosen.category, lat: chosen.lat, lng: chosen.lng, address: chosen.address, community: chosen.community });
+          await conn.reducers.createPost({ placeId: chosen.id, text: text.trim(), attribution: attr });
+          setText("");
+          setOpen(false);
+          onPosted?.(chosen);
+        } catch (error) {
+          setErr((error as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {lockedPlace ? null : <PlaceField place={place} onPlace={setPlace} />}
+      <label className="label">
+        Update
+        <textarea className="input" maxLength={280} rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Third floor is quiet." />
       </label>
-      <label className="label">Update
-      <textarea className="input" maxLength={280} rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Third floor is quiet." />
-      </label>
+      {err ? <p className="err">{err}</p> : null}
       <div className="row">
-        <button className="btn ghost small" onClick={() => setAttr(attr === "anonymous" ? "profile" : "anonymous")}>{attr === "anonymous" ? "Anonymous" : "Show profile"}</button>
-        <button
-          className="btn small"
-          onClick={async () => {
-            await conn.reducers.upsertPlace({ id: place.id, name: place.name, category: place.category, lat: place.lat, lng: place.lng, address: place.address, community: place.community });
-            await conn.reducers.createPost({ placeId: place.id, text: text.trim(), attribution: attr });
-            setText("");
-            setOpen(false);
-          }}
-        >
-          Post
-        </button>
+        <button className="control" type="button" onClick={() => setAttr(attr === "anonymous" ? "profile" : "anonymous")}>{attr === "anonymous" ? "Anonymous" : "Your name"}</button>
+        <button className="text" type="button" onClick={() => { setOpen(false); setErr(""); }}>Cancel</button>
       </div>
+      <button className="btn" type="submit" disabled={busy || !chosen || text.trim().length < 1}>{busy ? "Posting…" : "Post"}</button>
+    </form>
+  );
+}
+
+function summaryAdds(text: string, summary: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+  const body = norm(text);
+  const note = norm(summary);
+  if (!note || note === body || note.includes(body) || body.includes(note)) return false;
+  return true;
+}
+
+function PostCard({
+  conn,
+  post,
+  placeName,
+  showPlace,
+  onSelectPlace,
+  commentsOpen = false,
+}: {
+  conn: Conn;
+  post: { postId: bigint; placeId: string; text: string; summary: string; freshnessNote: string; freshnessState: string; commentCount: number; attribution: string; authorLabel: string; createdAtMs: number };
+  placeName: string;
+  showPlace?: boolean;
+  onSelectPlace?: (id: string) => void;
+  commentsOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(commentsOpen);
+  const [reacting, setReacting] = useState(false);
+  const [reactNote, setReactNote] = useState("");
+  const count = Number(post.commentCount);
+  async function react(text: "Still true" | "This changed") {
+    if (reacting) return;
+    setReacting(true);
+    setReactNote("");
+    try {
+      await conn.reducers.createComment({ postId: post.postId, text, attribution: "anonymous" });
+      setReactNote(text === "Still true" ? "Marked still true." : "Marked as changed.");
+    } catch (error) {
+      setReactNote((error as Error).message);
+    } finally {
+      setReacting(false);
+    }
+  }
+  const commentLabel = count === 0 ? "Comment" : count === 1 ? "1 comment" : `${count} comments`;
+  return (
+    <article className="card">
+      <div className="meta">
+        <span className="who">
+          {showPlace && onSelectPlace ? (
+            <button type="button" className="text" onClick={() => onSelectPlace(post.placeId)}>{placeName}</button>
+          ) : null}
+          {post.attribution === "profile" ? <span>{post.authorLabel}</span> : null}
+        </span>
+        <span>{formatAge((Date.now() - post.createdAtMs) / 1000)}</span>
+      </div>
+      <p className="body">{post.text}</p>
+      {summaryAdds(post.text, post.summary) ? <p>{post.summary}</p> : null}
+      {post.freshnessNote && post.freshnessState !== "fresh" && post.freshnessState !== "reinforced" ? <p className={`note ${post.freshnessState}`}>{post.freshnessNote}</p> : null}
+      <button className="text" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide" : commentLabel}</button>
+      {reactNote ? <p>{reactNote}</p> : null}
+      {open ? (
+        <>
+          <div className="row">
+            <button className="text" type="button" disabled={reacting} onClick={() => void react("Still true")}>Still true</button>
+            <button className="text" type="button" disabled={reacting} onClick={() => void react("This changed")}>This changed</button>
+          </div>
+          <CommentBox conn={conn} postId={post.postId} />
+        </>
+      ) : null}
+    </article>
+  );
+}
+
+function CommentBox({ conn, postId }: { conn: Conn; postId: bigint }) {
+  const comments = list(conn.db.pulseComments.iter()).filter((c) => c.postId === postId).sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt));
+  const [text, setText] = useState("");
+  const [attr, setAttr] = useState<"anonymous" | "profile">("anonymous");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  return (
+    <div className="thread">
+      {comments.filter((c) => !/^(still true|this changed)$/i.test(c.text.trim())).map((c) => (
+        <p className="comment" key={String(c.id)}><span>{c.authorLabel}</span>{c.text}</p>
+      ))}
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (busy || text.trim().length < 1) return;
+          setBusy(true);
+          setErr("");
+          try {
+            await conn.reducers.createComment({ postId, text: text.trim(), attribution: attr });
+            setText("");
+          } catch (error) {
+            setErr((error as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <input className="input" value={text} placeholder="Add a comment" onChange={(e) => setText(e.target.value)} />
+        {err ? <p className="err">{err}</p> : null}
+        <div className="row">
+          <button className="control" type="button" onClick={() => setAttr(attr === "anonymous" ? "profile" : "anonymous")}>{attr === "anonymous" ? "Anonymous" : "Your name"}</button>
+          <button className="btn small" type="submit" disabled={busy || text.trim().length < 1}>{busy ? "Sending…" : "Send"}</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -327,6 +530,9 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
   const events = list(conn.db.myQueryEvents.iter()).filter((e) => String(e.queryId) === id).sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt));
   const [choice, setChoice] = useState("");
   const [diag, setDiag] = useState(false);
+  useEffect(() => {
+    sessionStorage.setItem(LAST_QUERY, id);
+  }, [id]);
   if (!q) return <p>Query not found.</p>;
   const place = list(conn.db.place.iter()).find((p) => p.id === q.placeId);
   const clar = q.clarificationJson ? JSON.parse(q.clarificationJson) as { question: string; options: string[] } : null;
@@ -367,6 +573,7 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
           {diag && <pre className="diag">{JSON.stringify({ planner: ans.planner, confidence: ans.confidence, factors: ans.factors, supporting: ans.supporting, caveats: ans.caveats }, null, 2)}</pre>}
         </>
       )}
+      <button className="text" type="button" onClick={() => { sessionStorage.removeItem(LAST_QUERY); go("/"); }}>New question</button>
     </section>
   );
 }
@@ -429,17 +636,20 @@ function AnswerForm({
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
   const controls = JSON.parse(prompt.controlsJson) as { dimension_key: string; label: string; options: { value: string; label: string }[] }[];
+  const passed = answers["other:place_part"] === "not_here";
+  const visible = passed ? controls.filter((c) => c.dimension_key === "other:place_part") : controls;
+  const answered = visible.filter((c) => answers[c.dimension_key]).length;
   if (done) return <p>Thanks — signal sent.</p>;
   return (
     <>
       <p>{prompt.placeName}</p>
       <h2>{prompt.question}</h2>
-      {controls.map((c) => (
+      {visible.map((c) => (
         <fieldset className="choice-set" key={c.dimension_key}>
           {c.label && c.dimension_key !== "other:answer" ? <legend>{c.label}</legend> : null}
           {c.options.map((o) => (
             <label className="radio" key={o.value}>
-              <input type="radio" name={c.dimension_key} checked={answers[c.dimension_key] === o.value} onChange={() => setAnswers({ ...answers, [c.dimension_key]: o.value })} />
+              <input type="radio" name={c.dimension_key} checked={answers[c.dimension_key] === o.value} onChange={() => setAnswers(c.dimension_key === "other:place_part" && o.value === "not_here" ? { "other:place_part": "not_here" } : { ...answers, [c.dimension_key]: o.value })} />
               {o.label}
             </label>
           ))}
@@ -453,10 +663,11 @@ function AnswerForm({
       <div className="actions">
         <button
           className="btn"
-          disabled={prompt.responded || Object.keys(answers).length < controls.length}
+          disabled={prompt.responded || answered < visible.length}
           onClick={async () => {
             try {
-              await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(answers), note });
+              const payload = Object.fromEntries(visible.map((c) => [c.dimension_key, answers[c.dimension_key]]));
+              await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(payload), note });
               setDone(true);
               onDone?.();
             } catch (e) {
@@ -494,40 +705,46 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
   );
 }
 
-function PlacePage({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>; id: string }) {
+function PlacePage({ conn, id }: { conn: Conn; id: string }) {
   const place = list(conn.db.place.iter()).find((p) => p.id === id);
-  const posts = list(conn.db.pulsePosts.iter()).filter((p) => p.placeId === id);
-  const [comment, setComment] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
+  const posts = list(conn.db.pulsePosts.iter()).filter((p) => p.placeId === id).sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
   if (!place) return <p>Unknown place.</p>;
+  const catalog = catalogPlaceFor(conn, id);
   return (
     <section>
-      <h1>{place.name}</h1>
-      <p>{place.address}</p>
+      <div className="status">
+        <h1>{place.name}</h1>
+        {place.address ? <p>{place.address}</p> : null}
+      </div>
+      {catalog ? <ComposerPost conn={conn} lockedPlace={catalog} /> : null}
       {posts.map((p) => (
-        <article className="card" key={String(p.id)}>
-          <p className="body">{p.text}</p>
-          {p.summary && <p>{p.summary}</p>}
-          {p.freshnessNote ? <p className={`note ${p.freshnessState}`}>{p.freshnessNote}</p> : null}
-          <button className="text" onClick={() => setOpen(open === String(p.id) ? null : String(p.id))}>Comments</button>
-          {open === String(p.id) && (
-            <>
-              {list(conn.db.pulseComments.iter()).filter((c) => c.postId === p.id).map((c) => (
-                <p key={String(c.id)}><strong>{c.authorLabel}:</strong> {c.text}</p>
-              ))}
-              <label className="label">Comment
-              <input className="input" value={comment} onChange={(e) => setComment(e.target.value)} />
-              </label>
-              <button className="btn small" onClick={async () => {
-                await conn.reducers.createComment({ postId: p.id, text: comment.trim(), attribution: "anonymous" });
-                setComment("");
-              }}>Comment</button>
-            </>
-          )}
-        </article>
+        <PostCard
+          key={String(p.id)}
+          conn={conn}
+          post={{ ...p, postId: p.id, createdAtMs: toMs(p.createdAt) }}
+          placeName={place.name}
+        />
       ))}
+      {!posts.length ? (
+        <div className="empty">
+          <h2>No posts yet</h2>
+          <p>Share what this place is like right now.</p>
+        </div>
+      ) : null}
     </section>
   );
+}
+
+function ImpactLine({ conn }: { conn: Conn }) {
+  const events = list(conn.db.myImpact.iter());
+  const helped = new Set(events.filter((e) => e.kind === "helped").map((e) => String(e.queryId))).size;
+  const avoided = new Set(events.filter((e) => e.kind === "avoided_prompt").map((e) => String(e.queryId))).size;
+  if (!helped && !avoided) return null;
+  const helpedText = helped ? `Your updates helped ${helped} ${helped === 1 ? "question" : "questions"}.` : "";
+  const avoidedText = avoided
+    ? `${avoided} ${avoided === 1 ? "question was" : "questions were"} answered from what you shared, so nobody new was asked.`
+    : "";
+  return <p className="body">{`${helpedText} ${avoidedText}`.trim()}</p>;
 }
 
 function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
@@ -634,6 +851,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       ) : (
         <button className="name" onClick={() => { setDraft(""); setNameErr(""); setEditing(true); }}>{shown}</button>
       )}
+      <ImpactLine conn={conn} />
       {(() => {
         const picked = demo ? CATALOG_PLACES.find((p) => p.id === demo) : null;
         const gpsPoint = gpsFix ?? (loc && loc.source === "gps" ? { lat: loc.lat, lng: loc.lng } : null);

@@ -8,3 +8,4 @@ export * from "./dedup";
 export * from "./freshness";
 export * from "./ranking";
 export * from "./places";
+export * from "./placePart";

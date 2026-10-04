@@ -4,8 +4,8 @@
   "description": "Ask about a place. Nearby people answer.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#e8edf2",
-  "theme_color": "#e8edf2",
+  "background_color": "#F7F6F3",
+  "theme_color": "#F7F6F3",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]

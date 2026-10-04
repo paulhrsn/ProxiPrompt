@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { CATALOG_PLACES, resolveCatalogPlace } from "@proxiprompt/core";
+import { searchPlaces } from "./places.js";
 import type { DbConnection } from "../../../spacetimedb/bindings/index.js";
 import { parseJson, toMs } from "./util.js";
 
@@ -45,6 +46,11 @@ export function startAsiServer(getConn: () => DbConnection | null, port: number)
     try {
       if (req.method === "GET" && url.pathname === "/health") {
         json(res, 200, { ok: true, connected: !!getConn() });
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/places") {
+        const places = await searchPlaces(url.searchParams.get("q") ?? "");
+        json(res, 200, { places });
         return;
       }
       if (req.method === "GET" && url.pathname === "/vapidPublicKey") {

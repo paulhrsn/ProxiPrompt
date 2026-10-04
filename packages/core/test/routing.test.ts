@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getConfig } from "../src/config";
 import { nextWaveCount, selectResponders, type Candidate } from "../src/routing";
+import { CATALOG_PLACES } from "../src/places";
 
 const NOW = 1_700_000_000_000;
 const place = { lat: 42.2758, lng: -83.7372 }; // Shapiro
@@ -101,6 +102,21 @@ describe("selectResponders", () => {
     expect(r.excluded).toHaveLength(1);
     expect(r.excluded[0]).toMatchObject({ userId: "a", reason: "cooldown" });
     expect(r.selected.map((s) => s.userId)).toEqual(["b"]);
+  });
+
+  it("does not ask a demo pin at Pierpont about Duderstadt", () => {
+    const dude = CATALOG_PLACES.find((p) => p.id === "duderstadt-center")!;
+    const pierpont = CATALOG_PLACES.find((p) => p.id === "pierpont-commons")!;
+    const r = selectResponders({
+      ...base,
+      place: { lat: dude.lat, lng: dude.lng },
+      candidates: [
+        cand("at-dude", 0, { source: "demo", lat: dude.lat, lng: dude.lng }),
+        cand("at-pierpont", 0, { source: "demo", lat: pierpont.lat, lng: pierpont.lng }),
+      ],
+    });
+    expect(r.selected.map((s) => s.userId)).toEqual(["at-dude"]);
+    expect(r.excluded).toMatchObject([{ userId: "at-pierpont", reason: "out_of_radius" }]);
   });
 
   it("spec scenario: two near Shapiro selected, Union (~375 m) excluded at 150 m radius", () => {
