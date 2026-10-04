@@ -77,11 +77,14 @@ SpacetimeAuth client `client_034a2MZhz5kQgykZquPJIl` set in git-ignored `apps/we
 |---|---|---|---|---|
 | W3 | Simulated neighbors: bot residents that answer prompts so a solo presenter can demo | `feat/demo-neighbors` | own DB `proxiprompt-bots`, orchestrator :8085 | dispatched |
 | W4 | Submission kit: DEMO.md, DEVPOST.md, Agentverse README, root README | `docs/submission-kit` | docs only | **merged** (`f89b9c7`) |
-| W1 | Hands-on demo polish via browser (SPEC §14, auth screen, watch, posts) | `fix/demo-polish` | `proxiprompt-test`, ports 8081/5174 | waiting for the auth e2e run to free the ports |
+| W1 | Make e2e pass with SpacetimeAuth on (tests take the "Use demo session" path), then hands-on demo polish via browser | `fix/demo-polish` | `proxiprompt-test`, ports 8081/5174 | dispatched |
+| W6 | ASI:One chat polish: greetings/help, unknown-place guidance, known places list, well-formatted answers | `feat/asi-chat-polish` | `services/agent` only, unit tests, own agent port 8093 if needed | dispatched |
 
 Events:
 - Browser e2e started with the client ID set (checks the tests survive the new sign-in screen); running long, result pending.
 - W4 merged `90f2efb`+`f89b9c7`: `DEMO.md` (3-min + 60-s scripts, checklist, solo mode, failure playbook), `DEVPOST.md` (all sections + per-track evidence; placeholders left for ASI:One chat link and video), Agentverse-facing `services/agent/README.md`, root `README.md` with mermaid architecture. Orchestrator verified counts in code (22 tables, 45 reducers, 25 views + 2 anonymous views = 27), 0 dashes, filled repo URL.
+- Auth e2e result: all 4 specs timed out at 240 s on the new "Sign in" screen (expected; tests assumed dev auth). Stopped the run; handed to W1 as task 1.
+- W1 and W6 dispatched.
 
 ## Work log addendum: MainCloud (2026-10-04, session 15, after Paul's `spacetime login`)
 - Published to MainCloud: live DB **`proxiprompt-mhacks`** (dashboard https://spacetimedb.com/proxiprompt-mhacks) and test DB `proxiprompt-mhacks-test`. New names, not `proxiprompt`, because worker tokens are stored per DB name in `spacetimedb/.local/worker-token-<db>`; reusing the local name would mix local and cloud tokens.
