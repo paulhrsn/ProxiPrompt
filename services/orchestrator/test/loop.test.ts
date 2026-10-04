@@ -849,6 +849,162 @@ describe("late answers (SPEC §7 step 9)", () => {
   });
 });
 
+/** Gives `who` n prompt responses (real answers, or "not_here" passes) from `ageMs` ago. */
+function addResponses(
+  conn: FakeConn,
+  who: ReturnType<typeof identityFor>,
+  n: number,
+  over: { pass?: boolean; ageMs?: number } = {},
+) {
+  for (let i = 0; i < n; i++) {
+    const id = BigInt(conn.rows.svcPromptResponse.length + 100);
+    conn.rows.svcPromptResponse.push({
+      id, batchId: 999n, responder: who,
+      answersJson: JSON.stringify({ noise_level: over.pass ? "not_here" : "mid" }), note: "",
+      createdAt: ts(NOW - (over.ageMs ?? MIN)), respKey: `999:${who.toHexString()}:${id}`, svc: 0,
+    });
+  }
+}
+
+/** `n` neighbors standing 1..n metres from the place, so a wave is limited only by its size. */
+function addNeighbors(conn: FakeConn, place: { lat: number; lng: number }, n: number) {
+  for (let i = 0; i < n; i++) {
+    addUser(conn, `nb${i}`, { lat: metersNorth(place.lat, 1 + i), lng: place.lng });
+  }
+}
+
+const boostEvents = (conn: FakeConn, queryId: bigint) =>
+  conn.rows.svcQueryEvent.filter((e) => e.queryId === queryId && e.message.startsWith("Priority boost"));
+
+describe("reciprocal priority (SPEC §7)", () => {
+  beforeEach(() => {
+    delete process.env.RECIPROCAL_PRIORITY;
+  });
+
+  it("serves the requester who answered neighbors first, even when they asked second", async () => {
+    const conn = makeFakeConn(NOW);
+    const shapiro = addPlace(conn);
+    const hatcher = addPlace(conn, { id: "hatcher-graduate-library", name: "Hatcher Graduate Library", lat: 42.2767, lng: -83.7382 });
+    const lowAsker = addUser(conn, "low-asker");
+    const highAsker = addUser(conn, "high-asker");
+    addUser(conn, "near-shapiro", { lat: metersNorth(shapiro.lat, 10), lng: shapiro.lng });
+    addUser(conn, "near-hatcher", { lat: metersNorth(hatcher.lat, 10), lng: hatcher.lng });
+    addResponses(conn, highAsker, 2);
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    addQuery(conn, lowAsker, shapiro.id, "Is Shapiro quiet?");
+    addQuery(conn, highAsker, hatcher.id, "Is Hatcher quiet?");
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcPromptBatch[0]!.placeId).toBe(hatcher.id);
+    expect(conn.rows.svcPromptBatch[1]!.placeId).toBe(shapiro.id);
+  });
+
+  it("keeps created order between requesters with equal credit", async () => {
+    const conn = makeFakeConn(NOW);
+    const shapiro = addPlace(conn);
+    const hatcher = addPlace(conn, { id: "hatcher-graduate-library", name: "Hatcher Graduate Library", lat: 42.2767, lng: -83.7382 });
+    const a = addUser(conn, "asker-a");
+    const b = addUser(conn, "asker-b");
+    addUser(conn, "near-shapiro", { lat: metersNorth(shapiro.lat, 10), lng: shapiro.lng });
+    addUser(conn, "near-hatcher", { lat: metersNorth(hatcher.lat, 10), lng: hatcher.lng });
+    addResponses(conn, a, 2);
+    addResponses(conn, b, 2);
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    addQuery(conn, a, shapiro.id, "Is Shapiro quiet?");
+    addQuery(conn, b, hatcher.id, "Is Hatcher quiet?");
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcPromptBatch[0]!.placeId).toBe(shapiro.id);
+  });
+
+  it("widens the first wave by the requester's credit", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker");
+    addNeighbors(conn, place, 25);
+    addResponses(conn, asker, 3);
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    addQuery(conn, asker, place.id, "Is it quiet?");
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcPromptRecipient).toHaveLength(13);
+  });
+
+  it("caps the extra reach at 5, so the first wave is at most 15", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker");
+    addNeighbors(conn, place, 25);
+    addResponses(conn, asker, 9);
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    addQuery(conn, asker, place.id, "Is it quiet?");
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcPromptRecipient).toHaveLength(15);
+  });
+
+  it("does not penalize a requester with no credit, and passes or old answers earn none", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker");
+    addNeighbors(conn, place, 25);
+    addResponses(conn, asker, 4, { pass: true });
+    addResponses(conn, asker, 4, { ageMs: 25 * 60 * MIN });
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    const q = addQuery(conn, asker, place.id, "Is it quiet?");
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcPromptRecipient).toHaveLength(10);
+    expect(boostEvents(conn, q.id)).toHaveLength(0);
+  });
+
+  it("tells the requester about the boost once, and only when there is credit", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker");
+    const stranger = addUser(conn, "stranger");
+    addNeighbors(conn, place, 12);
+    addResponses(conn, asker, 3);
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    const q = addQuery(conn, asker, place.id, "Is it quiet?");
+    const q0 = addQuery(conn, stranger, place.id, "Seats free?");
+    await tick(asConn(conn));
+    await tick(asConn(conn));
+    await tick(asConn(conn));
+
+    const events = boostEvents(conn, q.id);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.message).toBe("Priority boost: you answered 3 neighbors today");
+    expect(boostEvents(conn, q0.id)).toHaveLength(0);
+  });
+
+  it("with RECIPROCAL_PRIORITY off, behaves exactly as before", async () => {
+    process.env.RECIPROCAL_PRIORITY = "0";
+    const conn = makeFakeConn(NOW);
+    const shapiro = addPlace(conn);
+    const hatcher = addPlace(conn, { id: "hatcher-graduate-library", name: "Hatcher Graduate Library", lat: 42.2767, lng: -83.7382 });
+    const lowAsker = addUser(conn, "low-asker");
+    const highAsker = addUser(conn, "high-asker");
+    addNeighbors(conn, hatcher, 25);
+    addResponses(conn, highAsker, 3);
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+
+    addQuery(conn, lowAsker, shapiro.id, "Is Shapiro quiet?");
+    const hq = addQuery(conn, highAsker, hatcher.id, "Is Hatcher quiet?");
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcPromptBatch.map((b) => b.placeId)).toEqual([hatcher.id]);
+    expect(conn.rows.svcPromptRecipient).toHaveLength(10);
+    expect(boostEvents(conn, hq.id)).toHaveLength(0);
+  });
+});
+
 describe("the fake connection still matches the real module", () => {
   it("mirrors the guardrail constants in spacetimedb/src/lib.ts", () => {
     const libPath = join(dirname(fileURLToPath(import.meta.url)), "../../../spacetimedb/src/lib.ts");

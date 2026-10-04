@@ -133,6 +133,8 @@ Timing config (`DEMO_MODE` env toggles):
 | RESPONDER_COOLDOWN_S | 600 | 60 |
 | PROMPT_EXPIRY_S | 600 | 600 |
 
+**Reciprocal priority.** Credit for a user is the number of prompt responses they submitted in the last 24 hours that were not a `not_here` pass, capped at 5. The worker computes it from `svc_prompt_response` (`reciprocityCredit` in `packages/core`). It has three effects, all on the requester's own query: queries waiting to be planned in the same tick are served higher credit first (created order breaks ties); the first wave is `FIRST_WAVE + credit` people (10 to 15), still capped by `MAX_RECIPIENTS`, and for a job shared by several queries the highest credit among them applies; and when credit is above zero the requester's timeline gets one "Priority boost: you answered N neighbors today" event per query. Credit is never shown to responders or in any public view, and zero credit is never penalized. `RECIPROCAL_PRIORITY` in `CoreConfig` (true by default) switches it off; the worker also reads env `RECIPROCAL_PRIORITY=0`.
+
 Timeline events shown to requester (compact, no chain-of-thought): "Understanding your question", "Checking recent updates", "Found N recent updates (X fresh)", "Asking N people near {place}", "Received k of N", "Enough evidence", "Answer ready" / "Not enough fresh evidence".
 
 ## 8. Scoring (deterministic, `packages/core`)
@@ -206,7 +208,7 @@ Rate limits (queries 10/h, posts 10/h, comments 30/h per account; the service id
 
 ## 13. Priorities
 - **P0 (non-negotiable, in order):** query → plan → evidence check → push to nearby → one-time response → live synthesis → caching/dedup → async result notification; then Live Pulse posts/comments/summaries/ranking; impact receipts; guardrails; onboarding/permission/error states.
-- **P1:** Bluesky public `app.bsky.feed.searchPosts` provider (normalized `source_type:"social"`, never claimed verified); diagnostics drawer UI; Confirm/Changed reactions; reciprocal priority experiment; richer contributor recognition.
+- **P1:** Bluesky public `app.bsky.feed.searchPosts` provider (normalized `source_type:"social"`, never claimed verified); diagnostics drawer UI; Confirm/Changed reactions; richer contributor recognition. Built: reciprocal priority (a requester's credit is their non-pass prompt responses in the last 24 hours, capped at 5, and it orders their query earlier and adds that many people to the first wave; see §7).
 
 ## 14. Canonical demo (acceptance scenario)
 1. Four signed-in installed PWAs. Paul = requester (laptop or phone). Jerry and Shiyuan have demo locations at Shapiro (~20 m, ~45 m). Chinmay demo-located at Michigan Union (~600 m). One device shows real GPS to prove acquisition.
