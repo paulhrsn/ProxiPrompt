@@ -8,12 +8,16 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
-**As of 2026-10-04 (session 15): all agent-doable work is done and verified on `main`.** Session 15 merged four lanes (see the orchestration log below): the browser e2e suite is isolated and green (4/4 twice), `/asi/query` has an optional shared bridge token that fails closed on a public bind, Known issues are accurate, and reciprocal priority (SPEC §7) is built. Remaining work needs Paul: SpacetimeAuth client ID, Agentverse handle, public ASI:One chat link, demo video, Devpost, and iPhone push.
+**As of 2026-10-04 ~08:05 (session 16): demo-ready on local and MainCloud.** Real SpacetimeAuth sign-in with a "Use demo session" button; simulated neighbors for solo demos (`pnpm demo:neighbors`); polished ASI:One chat; MainCloud path rehearsed end to end; submission kit written (`DEMO.md`, `DEVPOST.md`, READMEs). W10 (confidence on conflicting reports, readable sources view, posts default place, watch duplicate, "still true" state) in progress at handoff; check the session 16 log for its result.
 
-State at handoff:
-- Infra left running by the orchestrator: SpacetimeDB on :3000 and the agent on :8001. No live orchestrator or Vite (8080/5173); run `pnpm dev` for the full local stack.
-- Tests on main: core 131, orchestrator 63, agent 148, browser e2e 4, guardrails 72 (last run session 14; no module change since).
-- New env var `ORCH_BRIDGE_TOKEN` (orchestrator + agent): optional locally; required before `ORCH_HOST=0.0.0.0`. New env switch `RECIPROCAL_PRIORITY=0` turns the experiment off.
+How to demo now (see `DEMO.md`):
+- Team demo, cloud DB: `STDB_TARGET=maincloud pnpm dev`, open `http://localhost:5173` (asker) and `http://127.0.0.1:5173` (responder), sign in or "Use demo session".
+- Solo demo: add `pnpm demo:neighbors --uri wss://maincloud.spacetimedb.com --db proxiprompt-mhacks --count 8` in a second terminal.
+- Local only: `pnpm dev` (local DB was re-created this session; everyone re-onboards locally).
+
+Tests on main: browser e2e 5/5, core 131, orchestrator 81, agent 186, guardrails 72 (MainCloud test DB). Live Agentverse agent restarted on current code (mailbox on).
+
+Still needs Paul (human-only): register Agentverse handle `proxipromptagent`; record a public ASI:One chat share link of an answered question and paste it into `DEVPOST.md` (`TODO_ASI_ONE_CHAT_LINK`); demo video (`TODO_VIDEO_URL`); Devpost submission; iPhone push test; try one real magic-link sign-up.
 
 ## Status by plan to-do
 | to-do | status | notes |
