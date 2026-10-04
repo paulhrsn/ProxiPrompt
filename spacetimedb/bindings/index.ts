@@ -46,6 +46,7 @@ import CreateWatchReducer from "./create_watch_reducer";
 import DeactivateDeviceReducer from "./deactivate_device_reducer";
 import DeleteCommentReducer from "./delete_comment_reducer";
 import DeletePostReducer from "./delete_post_reducer";
+import HeartbeatReducer from "./heartbeat_reducer";
 import RegisterDeviceReducer from "./register_device_reducer";
 import ReportContentReducer from "./report_content_reducer";
 import SetNotificationsPausedReducer from "./set_notifications_paused_reducer";
@@ -61,10 +62,12 @@ import WorkerAttachQueryReducer from "./worker_attach_query_reducer";
 import WorkerCollectGarbageReducer from "./worker_collect_garbage_reducer";
 import WorkerCreateJobReducer from "./worker_create_job_reducer";
 import WorkerCreatePromptBatchReducer from "./worker_create_prompt_batch_reducer";
+import WorkerDeactivateDeviceReducer from "./worker_deactivate_device_reducer";
 import WorkerDevWipeReducer from "./worker_dev_wipe_reducer";
 import WorkerEnsureGcReducer from "./worker_ensure_gc_reducer";
 import WorkerInvalidateObservationReducer from "./worker_invalidate_observation_reducer";
 import WorkerMarkNotifiedReducer from "./worker_mark_notified_reducer";
+import WorkerMergeJobPlanReducer from "./worker_merge_job_plan_reducer";
 import WorkerNoteWatchReducer from "./worker_note_watch_reducer";
 import WorkerRecordImpactReducer from "./worker_record_impact_reducer";
 import WorkerRetireWatchReducer from "./worker_retire_watch_reducer";
@@ -105,6 +108,7 @@ import SvcQueryRow from "./svc_query_table";
 import SvcQueryEventRow from "./svc_query_event_table";
 import SvcReportRow from "./svc_report_table";
 import SvcUserLocationRow from "./svc_user_location_table";
+import SvcUserPresenceRow from "./svc_user_presence_table";
 import SvcUserProfileRow from "./svc_user_profile_table";
 import SvcWatchRow from "./svc_watch_table";
 
@@ -301,6 +305,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, SvcUserLocationRow),
+  svcUserPresence: __table({
+    name: 'svc_user_presence',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, SvcUserPresenceRow),
   svcUserProfile: __table({
     name: 'svc_user_profile',
     indexes: [
@@ -331,6 +342,7 @@ const reducersSchema = __reducers(
   __reducerSchema("deactivate_device", DeactivateDeviceReducer),
   __reducerSchema("delete_comment", DeleteCommentReducer),
   __reducerSchema("delete_post", DeletePostReducer),
+  __reducerSchema("heartbeat", HeartbeatReducer),
   __reducerSchema("register_device", RegisterDeviceReducer),
   __reducerSchema("report_content", ReportContentReducer),
   __reducerSchema("set_notifications_paused", SetNotificationsPausedReducer),
@@ -346,10 +358,12 @@ const reducersSchema = __reducers(
   __reducerSchema("worker_collect_garbage", WorkerCollectGarbageReducer),
   __reducerSchema("worker_create_job", WorkerCreateJobReducer),
   __reducerSchema("worker_create_prompt_batch", WorkerCreatePromptBatchReducer),
+  __reducerSchema("worker_deactivate_device", WorkerDeactivateDeviceReducer),
   __reducerSchema("worker_dev_wipe", WorkerDevWipeReducer),
   __reducerSchema("worker_ensure_gc", WorkerEnsureGcReducer),
   __reducerSchema("worker_invalidate_observation", WorkerInvalidateObservationReducer),
   __reducerSchema("worker_mark_notified", WorkerMarkNotifiedReducer),
+  __reducerSchema("worker_merge_job_plan", WorkerMergeJobPlanReducer),
   __reducerSchema("worker_note_watch", WorkerNoteWatchReducer),
   __reducerSchema("worker_record_impact", WorkerRecordImpactReducer),
   __reducerSchema("worker_retire_watch", WorkerRetireWatchReducer),
@@ -418,6 +432,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "svc_report": Omit<typeof tablesSchema.schemaType.tables["svcReport"], "accessorName"> & { readonly accessorName: "svc_report" };
     /** @deprecated Use `svcUserLocation` instead. This alias will be removed in the next major version. */
     readonly "svc_user_location": Omit<typeof tablesSchema.schemaType.tables["svcUserLocation"], "accessorName"> & { readonly accessorName: "svc_user_location" };
+    /** @deprecated Use `svcUserPresence` instead. This alias will be removed in the next major version. */
+    readonly "svc_user_presence": Omit<typeof tablesSchema.schemaType.tables["svcUserPresence"], "accessorName"> & { readonly accessorName: "svc_user_presence" };
     /** @deprecated Use `svcUserProfile` instead. This alias will be removed in the next major version. */
     readonly "svc_user_profile": Omit<typeof tablesSchema.schemaType.tables["svcUserProfile"], "accessorName"> & { readonly accessorName: "svc_user_profile" };
     /** @deprecated Use `svcWatch` instead. This alias will be removed in the next major version. */
@@ -465,6 +481,7 @@ const tableAccessorAliases = {
   "svc_query_event": "svcQueryEvent",
   "svc_report": "svcReport",
   "svc_user_location": "svcUserLocation",
+  "svc_user_presence": "svcUserPresence",
   "svc_user_profile": "svcUserProfile",
   "svc_watch": "svcWatch",
 } as const;
@@ -537,6 +554,8 @@ export type DbView = __DbViewBase & {
   readonly "svc_report": __DbViewBase["svcReport"];
   /** @deprecated Use `svcUserLocation` instead. This alias will be removed in the next major version. */
   readonly "svc_user_location": __DbViewBase["svcUserLocation"];
+  /** @deprecated Use `svcUserPresence` instead. This alias will be removed in the next major version. */
+  readonly "svc_user_presence": __DbViewBase["svcUserPresence"];
   /** @deprecated Use `svcUserProfile` instead. This alias will be removed in the next major version. */
   readonly "svc_user_profile": __DbViewBase["svcUserProfile"];
   /** @deprecated Use `svcWatch` instead. This alias will be removed in the next major version. */
@@ -595,6 +614,8 @@ export type Tables = __TablesBase & {
   readonly "svc_report": __TablesBase["svcReport"];
   /** @deprecated Use `svcUserLocation` instead. This alias will be removed in the next major version. */
   readonly "svc_user_location": __TablesBase["svcUserLocation"];
+  /** @deprecated Use `svcUserPresence` instead. This alias will be removed in the next major version. */
+  readonly "svc_user_presence": __TablesBase["svcUserPresence"];
   /** @deprecated Use `svcUserProfile` instead. This alias will be removed in the next major version. */
   readonly "svc_user_profile": __TablesBase["svcUserProfile"];
   /** @deprecated Use `svcWatch` instead. This alias will be removed in the next major version. */

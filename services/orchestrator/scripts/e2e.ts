@@ -69,6 +69,9 @@ async function main() {
   await near1.conn.reducers.setProfile({ username: `n1_${suffix}`.slice(0, 20), defaultAttribution: "anonymous", avatarSeed: "b" });
   await near2.conn.reducers.setProfile({ username: `n2_${suffix}`.slice(0, 20), defaultAttribution: "anonymous", avatarSeed: "c" });
   await far.conn.reducers.setProfile({ username: `far_${suffix}`.slice(0, 20), defaultAttribution: "anonymous", avatarSeed: "d" });
+  await near1.conn.reducers.heartbeat({active:true});
+  await near2.conn.reducers.heartbeat({active:true});
+  await far.conn.reducers.heartbeat({active:true});
 
   await asker.conn.reducers.upsertPlace({
     id: place.id, name: place.name, category: place.category, lat: place.lat, lng: place.lng, address: place.address, community: place.community,
@@ -151,6 +154,7 @@ async function main() {
   }
   await claimAsker.conn.reducers.setProfile({ username: `ca_${suffix}`.slice(0, 20), defaultAttribution: "anonymous", avatarSeed: "f" });
   await claimer.conn.reducers.setProfile({ username: `cl_${suffix}`.slice(0, 20), defaultAttribution: "anonymous", avatarSeed: "g" });
+  await claimer.conn.reducers.heartbeat({active:true});
   for (const p of [dudePlace, pierpontPlace]) {
     await claimAsker.conn.reducers.upsertPlace({
       id: p.id, name: p.name, category: p.category, lat: p.lat, lng: p.lng, address: p.address, community: p.community,

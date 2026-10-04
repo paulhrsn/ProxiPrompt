@@ -1096,3 +1096,97 @@ describe("a late conflicting report on an answered question", () => {
     expect(answer.caveats[0]).toMatch(/^Reports disagree/);
   });
 });
+
+describe("audit reproductions", () => {
+  it("does not put contributor identities into requester answers", async () => {
+    const c = makeFakeConn(NOW); const p = addPlace(c);
+    const a = addUser(c, "privacy_asker", {lat:42.30,lng:-83.70});
+    const contributor = identityFor("private_responder");
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(c, {dimension:"noise_level", contributor});
+    const q = addQuery(c, a, p.id, "Is Shapiro quiet?");
+    await tick(asConn(c));
+    const answer = c.rows.svcQuery.find(row=>row.id===q.id)!.answerJson!;
+    expect(answer).not.toContain(contributor.toHexString());
+    expect(JSON.parse(answer).factors).not.toHaveProperty("contributorIds");
+  });
+  it("deactivates an expired push device", async () => {
+    const c = makeFakeConn(NOW); const p = addPlace(c);
+    const a = addUser(c, "push_asker", {lat:42.30,lng:-83.70});
+    const r = addUser(c, "expired_device", {lat:p.lat,lng:p.lng});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    vi.mocked(pushEnabled).mockReturnValue(true);
+    vi.mocked(sendPush).mockResolvedValue("gone");
+    addQuery(c,a,p.id,"Is Shapiro quiet?");
+    try {
+      await tick(asConn(c));
+      expect(c.rows.svcDevice.find(d=>d.owner.isEqual(r))!.active).toBe(false);
+    } finally {vi.mocked(pushEnabled).mockReturnValue(false);}
+  });
+  it("scores each attached query using its own required dimensions", async () => {
+    const c = makeFakeConn(NOW); const p = addPlace(c);
+    const a = addUser(c, "audit_a", {lat:42.30,lng:-83.70});
+    const b = addUser(c, "audit_b", {lat:42.30,lng:-83.70});
+    addUser(c,"audit_r",{lat:p.lat,lng:p.lng});
+    vi.mocked(callPlan).mockResolvedValueOnce(plan(["noise_level"]) as never)
+      .mockResolvedValueOnce(plan(["noise_level","seating_availability"]) as never);
+    addQuery(c,a,p.id,"Is Shapiro quiet?");
+    const q2=addQuery(c,b,p.id,"Are there quiet seats at Shapiro?");
+    await tick(asConn(c));
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1")});
+    await tick(asConn(c));
+    const stored=c.rows.svcQuery.find(q=>q.id===q2.id)!;
+
+    expect(stored.status).toBe("collecting");
+    expect(JSON.parse(c.rows.svcEvidenceJob[0].dimensionKeysJson)).toContain("seating_availability");
+    addObservation(c,{dimension:"seating_availability",contributor:identityFor("reporter2")});
+    await tick(asConn(c));
+    const final=JSON.parse(c.rows.svcQuery.find(q=>q.id===q2.id)!.answerJson!);
+    expect(final.dimensions.map((d: {key:string})=>d.key)).toContain("seating_availability");
+  });
+  it("refreshes an answer when the modal value changes with unchanged count and confidence level", async()=>{
+    const c=makeFakeConn(NOW); const p=addPlace(c);
+    const a=addUser(c,"audit_a",{lat:42.30,lng:-83.70});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"low",valueLabel:"Quiet",ordinal:0,ageMs:1000});
+    const q=addQuery(c,a,p.id,"Is Shapiro quiet?"); await tick(asConn(c));
+    const before=vi.mocked(callSynthesize).mock.calls.length;
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"high",valueLabel:"Loud",ordinal:2});
+    await tick(asConn(c));
+    expect(vi.mocked(callSynthesize).mock.calls.length).toBeGreaterThan(before);
+  });
+  it("does not reuse an observation from a deleted post",async()=>{
+    const c=makeFakeConn(NOW);const p=addPlace(c);
+    const a=addUser(c,"audit_a",{lat:42.30,lng:-83.70});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("deleted_author"),sourceType:"post"});
+    c.rows.svcObservation[0].sourceId="post:99";
+    c.rows.svcPost.push({id:99n,placeId:p.id,author:identityFor("deleted_author"),text:"Quiet",attribution:"anonymous",createdAt:ts(NOW),deleted:true,hidden:false,commentCount:0,summary:"Quiet",freshnessNote:"Fresh",freshnessState:"fresh",svc:0} as never);
+    const q=addQuery(c,a,p.id,"Is Shapiro quiet?");await tick(asConn(c));
+    const result=c.rows.svcQuery.find(x=>x.id===q.id)!;
+    expect(result.status).not.toBe("answered");
+    expect(c.rows.svcObservation[0].invalidated).toBe(true);
+  });
+});
+
+
+describe("foreground reachability", () => {
+  it("routes to an open foreground session with an old but valid location and no push device", async () => {
+    const c = makeFakeConn(NOW); const place = addPlace(c);
+    const asker = addUser(c, "presence_asker", {lat:42.30,lng:-83.70});
+    const responder = addUser(c, "foreground", {lat:place.lat,lng:place.lng, device:false, ageMs:3600000});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addQuery(c, asker, place.id, "Is Shapiro quiet?");
+    await tick(asConn(c));
+    expect(c.rows.svcPromptRecipient.some(r=>r.responder.isEqual(responder))).toBe(true);
+  });
+  it("does not infer foreground reachability from a recent location", async () => {
+    const c = makeFakeConn(NOW); const place = addPlace(c);
+    const asker = addUser(c, "presence_asker", {lat:42.30,lng:-83.70});
+    const responder = addUser(c, "background", {lat:place.lat,lng:place.lng, device:false, foreground:false, ageMs:1000});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addQuery(c, asker, place.id, "Is Shapiro quiet?");
+    await tick(asConn(c));
+    expect(c.rows.svcPromptRecipient.some(r=>r.responder.isEqual(responder))).toBe(false);
+  });
+});

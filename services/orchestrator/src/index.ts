@@ -39,6 +39,7 @@ const SVC_VIEWS = [
   "SELECT * FROM svc_prompt_response",
   "SELECT * FROM svc_observation",
   "SELECT * FROM svc_user_location",
+  "SELECT * FROM svc_user_presence",
   "SELECT * FROM svc_user_profile",
   "SELECT * FROM svc_device",
   "SELECT * FROM svc_post",

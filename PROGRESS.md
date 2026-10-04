@@ -8,6 +8,9 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
+**Current work (2026-10-04): fixing the correctness and demo-readiness audit findings.** The real email login → ask → logout → login persistence flow remains untested by Paul. Do not treat the previous session’s demo-ready assessment as full auth verification. The user also requested the supplied transparent question-mark/pin logo and its dark forest, warm white, mint palette; those UI changes are implemented and the web build passes. Audit fixes are still in progress and have not been deployed.
+
+Previous session assessment:
 **As of 2026-10-04 ~08:05 (session 16): demo-ready on local and MainCloud.** Real SpacetimeAuth sign-in with a "Use demo session" button; simulated neighbors for solo demos (`pnpm demo:neighbors`); polished ASI:One chat; MainCloud path rehearsed end to end; submission kit written (`DEMO.md`, `DEVPOST.md`, READMEs). W10 also landed: confidence drops when reports disagree, readable sources view, posts default place, single watch card, fading "still true".
 
 How to demo now (see `DEMO.md`):
@@ -362,3 +365,20 @@ With user authorization, installed Impeccable engine 0.1.11 through the bundled 
 - Post composer now shows the selected place, names the attribution choice, explains anonymity/profile attribution, and says whether a place or update is needed before posting. The primary action is labeled “Post update.”
 - Rebuilt developer settings rows with explicit flex layout and multiline descriptions to stop the diagnostic control and shared activity explanation from colliding.
 - Build and layout detector pass.
+
+
+## Logo and palette update (2026-10-04)
+
+- Added the user's replacement transparent PNG at `apps/web/public/logo.png`; the header uses an SVG viewport to remove empty space without changing the supplied image. Favicon, Apple touch icon, app manifest, and push icon point to the replacement PNG.
+- Replaced the neutral light palette with forest black `#0d1410`, dark green surfaces `#16211b`, warm white `#e9f0e9`, and mint `#80d3aa`. Applied shared tokens to cards, forms, tabs, selected options, notifications, settings, focus states, and confidence states. Browser theme and installed app background match.
+- Bumped the service-worker cache to `pp-v2` and removed previous `pp-v*` caches on activation so existing clients receive the current icon.
+- Verification: web production build passes; Chromium preview uses `proxiprompt-mhacks-test`, with a fresh demo identity. Chromium visual checks passed for sign-in, Ask, Questions, Posts, and You; no horizontal overflow on 390px mobile screens or the Ask screen at 320px, and no browser exceptions. Desktop preview also inspected. Contrast ratios: primary text 16.1:1, muted text on cards 7.86:1, mint button text 9.5:1. Remaining correctness audit regressions are still in progress.
+
+
+## Correctness fixes checkpoint (2026-10-04)
+
+Scope and remaining items are tracked in `AUDIT_FIXES.md`. Implemented requester-safe answer serialization (including historical view reads), per-question shared-job requirements, union collection plans, material late-answer updates, deleted/hidden evidence and impact invalidation, browser reconnect with repeated retries and token preservation, app-level location updates, private per-connection foreground heartbeat, and browser push cleanup/restoration. All notification paths deactivate gone endpoints.
+
+Verification: orchestrator 90 passed; local guardrails 74 passed (22 worker-only reducers checked); full Chromium suite 10 passed; workspace typechecks and web production build passed. New regression covers two failed reconnect attempts, location refresh after leaving You, and logout unsubscribing/deactivating the old endpoint. DB checks cover presence isolation/disconnect and requester payload identity removal; deleted post guardrail checks both observation invalidation and impact credit removal. Latest historical cleanup was checked with worker and DB regressions after the full browser run.
+
+Not complete: worker retry/readiness, owner-gated bootstrap/provisioning, durable ASI polling, planning timeout alignment, durable insufficient-answer notifications, and cloud/live handoff. Real email login/logout persistence remains a manual acceptance gap. Live MainCloud has not been republished by this batch.

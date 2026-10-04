@@ -240,6 +240,8 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
     ['workerSetClarification', { queryId: q1, clarificationJson: '{"question":"q"}' }],
     ['workerCreateJob', { clientKey: 'abcdefghij', placeId: slug, intentKey: 'k', dimensionKeysJson: '["a"]', planJson: '{}', deadlineAtMicros: nowMicros() + 60_000_000n }],
     ['workerAttachQuery', { queryId: q1, jobId: 1n }],
+    ['workerMergeJobPlan', {jobId:1n, planJson:'{}', dimensionKeysJson:'[]'}],
+    ['workerDeactivateDevice', {deviceId:1n}],
     ['workerSetJobStatus', { jobId: 1n, status: 'done', confidenceJson: '' }],
     ['workerCreatePromptBatch', { jobId: 1n, question: 'q', controlsJson: CONTROLS, expiresAtMicros: nowMicros() + 60_000_000n, recipientIdentitiesJson: '[]' }],
     ['workerMarkNotified', { recipientId: 1n }],
@@ -264,10 +266,26 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
 
 // ---- worker read mechanism: svc_* views ----
 await subscribe(W, [
-  'svc_user_profile', 'svc_device', 'svc_user_location', 'svc_query', 'svc_query_event', 'svc_evidence_job',
+  'svc_user_profile', 'svc_device', 'svc_user_location', 'svc_user_presence', 'svc_query', 'svc_query_event', 'svc_evidence_job',
   'svc_prompt_batch', 'svc_prompt_recipient', 'svc_prompt_response', 'svc_observation', 'svc_post', 'svc_comment',
   'svc_impact_event', 'svc_report', 'svc_watch',
 ].map((v) => `SELECT * FROM ${v}`));
+await check('foreground presence is connection-scoped, private, and removed on disconnect', async () => {
+  const c1 = track(await newUser('fg'));
+  const c2 = track(await connect(c1.token));
+  await R(c1).heartbeat({ active: true });
+  await R(c2).heartbeat({ active: true });
+  const mine = () => rows(W, 'svcUserPresence').filter(p => p.identity.toHexString() === c1.hex);
+  await eventually(() => mine().length === 2, 3000, 'two foreground connections');
+  await R(c1).heartbeat({ active: false });
+  await eventually(() => mine().length === 1, 3000, 'only hidden connection removed');
+  c2.conn.disconnect();
+  await eventually(() => mine().length === 0, 3000, 'disconnected connection removed');
+  await rejects(R(E).heartbeat({ active: true }), /profile/);
+  await subscribe(D, ['SELECT * FROM svc_user_presence']);
+  if (rows(D, 'svcUserPresence').length) throw new Error('ordinary user can see foreground identities');
+  await rejects(subscribe(track(await connect()), ['SELECT * FROM user_presence']), /no such table|private/i);
+});
 await check('worker read: svc_* views return ALL private rows to the service identity', async () => {
   const locs = rows(W, 'svcUserLocation').length;
   const qs = rows(W, 'svcQuery');
@@ -510,6 +528,21 @@ await check('answer lifecycle: collecting -> answered, answered -> answered ok, 
   return rejects(R(A).cancelQuery({ queryId: q1 }), /Invalid query transition answered -> cancelled/);
 });
 
+await check('requester answer payload strips responder identities while preserving readable sources', async () => {
+  const secret = B.hex;
+  await R(W).workerSetAnswer({ queryId: q1, status: 'answered', answerJson: JSON.stringify({
+    headline: 'Quiet', confidence: { level: 'Medium' }, sourceCount: 1,
+    factors: { contributorIds: [secret], observations: [{ id: 'example', dimension: 'noise_level',
+      valueLabel: 'Quiet', sourceType: 'response', weight: 1, contributorId: secret }] },
+    internal: { responder: secret },
+  }) });
+  const answer = await eventually(() => {
+    const json = rows(A, 'myQueries').find(q => q.id === q1)?.answerJson;
+    return json && JSON.parse(json).factors ? json : undefined;
+  }, 3000, 'safe requester answer');
+  if (answer.includes(secret) || /contributorId/.test(answer)) throw new Error('responder identity leaked');
+  if (JSON.parse(answer).factors.observations[0].valueLabel !== 'Quiet') throw new Error('readable sources lost');
+});
 // ============================================================================================
 console.log('\nLive Pulse: anonymity, ownership, moderation');
 let pA = 0n, pB = 0n;
@@ -568,7 +601,15 @@ await check('comments: counted, public rows hide author, delete decrements', asy
 await check('delete_post: only the author; deleted posts vanish from public view', async () => {
   const pub = PUB;
   await rejects(R(B).deletePost({ postId: pA }), /not found/);
+  await R(W).workerAddObservation({placeId:slug, dimension:'noise_level', value:'quiet', valueLabel:'Quiet',
+    kind:'objective', sourceType:'post', sourceId:`post:${pA}`, contributor:A.identity, verifiedNearby:true,
+    observedAtMicros:nowMicros(), expiresAtMicros:nowMicros()+900_000_000n });
+  const derived = await eventually(()=>rows(W,'svcObservation').find(o=>o.sourceId===`post:${pA}`),3000,'post evidence');
+  await R(W).workerRecordImpact({contributor:A.identity, sourceType:'post', sourceId:String(derived.id), queryId:q1, kind:'helped'});
+  await eventually(()=>rows(A,'myImpact').some(i=>i.sourceId===String(derived.id)),3000,'impact credited');
   await R(A).deletePost({ postId: pA });
+  await eventually(()=>rows(W,'svcObservation').find(o=>o.id===derived.id)?.invalidated,3000,'post evidence invalidated');
+  await eventually(()=>!rows(A,'myImpact').some(i=>i.sourceId===String(derived.id)),3000,'deleted contribution no longer credited');
   await eventually(() => !rows(pub, 'pulsePosts').some((p) => p.id === pA), 3000, 'post gone');
 });
 await check('report_content once per reporter; duplicate rejected', async () => {

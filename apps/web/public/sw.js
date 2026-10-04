@@ -1,10 +1,13 @@
 self.addEventListener("install", (e) => {
   self.skipWaiting();
-  e.waitUntil(caches.open("pp-v1").then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));
+  e.waitUntil(caches.open("pp-v2").then((c) => c.addAll(["/", "/manifest.webmanifest", "/logo.png"])));
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(Promise.all([
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("pp-v") && key !== "pp-v2").map((key) => caches.delete(key)))),
+    self.clients.claim(),
+  ]));
 });
 
 self.addEventListener("fetch", (e) => {
@@ -26,7 +29,7 @@ self.addEventListener("push", (e) => {
       body: data.body,
       tag: data.tag,
       data: { url: data.url },
-      icon: "/icon.svg",
+      icon: "/logo.png",
     }),
   );
 });

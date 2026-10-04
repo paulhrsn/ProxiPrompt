@@ -29,6 +29,24 @@ import {
 } from './lib';
 
 // ---------- profile / devices / location ----------
+export const heartbeat = spacetimedb.reducer({ active: t.bool() }, (ctx, { active }) => {
+  requireProfile(ctx);
+  if (!ctx.connectionId) fail('Foreground presence requires a connected browser');
+  const key = ctx.connectionId.toHexString();
+  const previous = ctx.db.user_presence.connection_id.find(key);
+  if (!active) {
+    if (previous) ctx.db.user_presence.connection_id.delete(key);
+    return;
+  }
+  const next = { connection_id: key, identity: ctx.sender, last_seen_at: ctx.timestamp, svc: 0 };
+  if (previous) ctx.db.user_presence.connection_id.update(next);
+  else ctx.db.user_presence.insert(next);
+});
+
+export const disconnected = spacetimedb.clientDisconnected((ctx) => {
+  if (ctx.connectionId) ctx.db.user_presence.connection_id.delete(ctx.connectionId.toHexString());
+});
+
 export const set_profile = spacetimedb.reducer(
   { username: t.string(), default_attribution: t.string(), avatar_seed: t.string() },
   (ctx, { username, default_attribution, avatar_seed }) => {
@@ -355,13 +373,24 @@ export const create_comment = spacetimedb.reducer(
   }
 );
 
+function invalidateContribution(ctx: any, sourceId: string) {
+  for (const o of ctx.db.observation.iter()) {
+    if (o.source_id !== sourceId) continue;
+    if (!o.invalidated) ctx.db.observation.id.update({ ...o, invalidated: true });
+    for (const impact of [...ctx.db.impact_event.iter()]) {
+      if (impact.source_id === String(o.id) || impact.source_id === sourceId) ctx.db.impact_event.id.delete(impact.id);
+    }
+  }
+}
+
 function removePost(ctx: any, p: any, mode: 'deleted' | 'hidden') {
-  // Content is blanked so it is gone from every reader (worker included); the flag tells the worker to invalidate
-  // observations derived from this post.
+  invalidateContribution(ctx, `post:${p.id}`);
+  for (const comment of ctx.db.comment.post_id.filter(p.id)) invalidateContribution(ctx, `comment:${comment.id}`);
   ctx.db.post.id.update({ ...p, [mode]: true, text: '', summary: '', claims_json: undefined, comment_count: 0 });
 }
 
 function removeComment(ctx: any, c: any, mode: 'deleted' | 'hidden') {
+  invalidateContribution(ctx, `comment:${c.id}`);
   ctx.db.comment.id.update({ ...c, [mode]: true, text: '' });
   const p = ctx.db.post.id.find(c.post_id);
   if (p && p.comment_count > 0) ctx.db.post.id.update({ ...p, comment_count: p.comment_count - 1 });

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AuthRoot } from "./auth";
 import App from "./App";
+import { LocationProvider } from "./location";
 import { SpacetimeProvider } from "./spacetime";
 import "./styles.css";
 
@@ -15,7 +16,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthRoot>
       <SpacetimeProvider>
-        <App />
+        <LocationProvider><App /></LocationProvider>
       </SpacetimeProvider>
     </AuthRoot>
   </StrictMode>,

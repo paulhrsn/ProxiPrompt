@@ -58,7 +58,6 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
-  const [retry, setRetry] = useState(0);
   const bump = () => setTick((n) => n + 1);
 
   useEffect(() => {
@@ -70,49 +69,95 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
     }
 
     let closed = false;
-    const token = dev ? localStorage.getItem(TOKEN_KEY) || undefined : idToken;
-    const c = DbConnection.builder()
-      .withUri(URI)
-      .withDatabaseName(DB)
-      .withToken(token)
-      .onConnect((connection, identity, tok) => {
-        if (closed) return;
-        if (dev) localStorage.setItem(TOKEN_KEY, tok);
-        setIdentityHex(identity.toHexString());
-        setConnected(true);
-        setError("");
-        setConn(connection);
-        connection
-          .subscriptionBuilder()
-          .onApplied(() => bump())
-          .onError((ctx) => setError(String((ctx as { event?: { message?: string } | Error }).event ?? "subscription failed")))
-          .subscribe(VIEWS);
-      })
-      .onConnectError((_ctx, err) => {
-        if (closed) return;
-        const message = err instanceof Error ? err.message : "Could not reach SpacetimeDB";
-        // A saved dev token this server does not recognise: forget it and start a fresh session.
-        if (dev && token && /verify token|unauthori[sz]ed|401/i.test(message)) {
-          localStorage.removeItem(TOKEN_KEY);
-          setRetry((n) => n + 1);
-          return;
-        }
-        setError(message);
-      })
-      .onDisconnect(() => {
-        if (closed) return;
-        setConnected(false);
-        setConn(null);
-      })
-      .build();
+    let generation = 0;
+    let attempts = 0;
+    let active: Conn | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    setConn(null);
+    setConnected(false);
+    setError("");
 
+    function schedule(message?: string, immediate = false) {
+      if (closed || retryTimer !== undefined) return;
+      ++generation; // Ignore callbacks from the connection being retired.
+      const previous = active;
+      active = null;
+      setConnected(false);
+      setConn(null);
+      if (message) setError(message);
+      previous?.disconnect();
+      const delay = immediate ? 0 : Math.min(500 * 2 ** Math.min(attempts++, 5), 10000);
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        connect();
+      }, delay);
+    }
+
+    function connect() {
+      if (closed) return;
+      const current = ++generation;
+      const valid = () => !closed && current === generation;
+      const token = dev ? localStorage.getItem(TOKEN_KEY) || undefined : idToken;
+      try {
+        active = DbConnection.builder()
+          .withUri(URI)
+          .withDatabaseName(DB)
+          .withToken(token)
+          .onConnect((connection, identity, tok) => {
+            if (!valid()) { connection.disconnect(); return; }
+            if (dev) localStorage.setItem(TOKEN_KEY, tok);
+            connection.subscriptionBuilder()
+              .onApplied(() => {
+                if (!valid()) return;
+                attempts = 0;
+                setIdentityHex(identity.toHexString());
+                setConnected(true);
+                setError("");
+                setConn(connection);
+                bump();
+              })
+              .onError((ctx) => {
+                if (valid()) schedule(String((ctx as { event?: unknown }).event ?? "Subscription failed"));
+              })
+              .subscribe(VIEWS);
+          })
+          .onConnectError((_ctx, err) => {
+            if (!valid()) return;
+            const message = err instanceof Error ? err.message : "Could not reach SpacetimeDB";
+            if (dev && token && /verify token|unauthori[sz]ed|401/i.test(message)) {
+              localStorage.removeItem(TOKEN_KEY);
+              schedule(undefined, true);
+            } else schedule(message);
+          })
+          .onDisconnect(() => { if (valid()) schedule(); })
+          .build();
+      } catch (err) {
+        if (valid()) schedule(err instanceof Error ? err.message : "Could not reach SpacetimeDB");
+      }
+    }
+
+    function resume() {
+      if (document.visibilityState === "hidden") return;
+      if (!active || active.isSocketClosed) {
+        if (retryTimer !== undefined) clearTimeout(retryTimer);
+        retryTimer = undefined;
+        schedule(undefined, true);
+      }
+    }
+    connect();
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
     const ping = setInterval(bump, 2000);
     return () => {
       closed = true;
+      ++generation;
       clearInterval(ping);
-      c.disconnect();
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", resume);
+      active?.disconnect();
     };
-  }, [dev, idToken, retry]);
+  }, [dev, idToken]);
 
   const value = useMemo(() => ({ conn, identityHex, connected, error, tick }), [conn, identityHex, connected, error, tick]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

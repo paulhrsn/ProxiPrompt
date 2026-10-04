@@ -107,6 +107,35 @@ export function parseJson(name: string, raw: string, maxLen: number): unknown {
   }
 }
 
+// Answers cross the requester privacy boundary, including historical snapshots.
+// Keep the diagnostics useful without exposing the worker's contributor identities.
+export function requesterAnswer(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  const answer = JSON.parse(raw);
+  if (!isPlainObject(answer)) return JSON.stringify(answer);
+  const safe: Record<string, unknown> = {};
+  for (const key of ['headline', 'recommendation', 'summary', 'supporting', 'caveats', 'planner',
+    'confidence', 'conflicts', 'sourceCount', 'updatedAtMs', 'cacheHit', 'dimensions', 'reason']) {
+    if (key in answer) safe[key] = answer[key];
+  }
+  if (isPlainObject(answer.factors)) {
+    const factors = answer.factors;
+    safe.factors = {
+      sufficientScore: factors.sufficientScore,
+      objectiveSupportMin: factors.objectiveSupportMin,
+      observations: Array.isArray(factors.observations) ? factors.observations.map((row) => {
+        const observation: Record<string, unknown> = {};
+        if (isPlainObject(row)) for (const key of ['id', 'dimension', 'valueLabel', 'sourceType',
+          'verifiedNearby', 'ageS', 'freshness', 'sourceWeight', 'reliability', 'weight', 'contradicted']) {
+          if (key in row) observation[key] = row[key];
+        }
+        return observation;
+      }) : [],
+    };
+  }
+  return JSON.stringify(safe);
+}
+
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

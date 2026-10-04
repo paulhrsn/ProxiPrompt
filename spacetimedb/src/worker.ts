@@ -21,6 +21,7 @@ import {
   recipientsForJob,
   requirePlace,
   requireService,
+  requesterAnswer,
   transitionQuery,
   ts,
 } from './lib';
@@ -91,11 +92,33 @@ export const worker_set_answer = spacetimedb.reducer(
     const q = getQuery(ctx, query_id);
     parseJson('answer_json', answer_json, 60_000);
     transitionQuery(ctx, q, status);
-    ctx.db.query.id.update({ ...q, status, answer_json, updated_at: ctx.timestamp });
+    ctx.db.query.id.update({ ...q, status, answer_json: requesterAnswer(answer_json), updated_at: ctx.timestamp });
   }
 );
 
 // ---------- evidence jobs ----------
+export const worker_merge_job_plan = spacetimedb.reducer(
+  { job_id: t.u64(), plan_json: t.string(), dimension_keys_json: t.string() },
+  (ctx, { job_id, plan_json, dimension_keys_json }) => {
+    requireService(ctx);
+    const job = ctx.db.evidence_job.id.find(job_id);
+    if (!job || job.status !== 'collecting') fail('Only collecting jobs can add requirements');
+    const plan = parseJson('plan_json', plan_json, 20_000);
+    const keys = parseJson('dimension_keys_json', dimension_keys_json, 2000);
+    if (!isPlainObject(plan) || !Array.isArray(keys) || !keys.length || keys.some(k => typeof k !== 'string')) {
+      fail('Expected a plan and non-empty dimension keys');
+    }
+    const existing = JSON.parse(job.dimension_keys_json) as string[];
+    if (existing.some(k => !keys.includes(k))) fail('Existing requirements cannot be removed');
+    ctx.db.evidence_job.id.update({ ...job, plan_json, dimension_keys_json });
+  }
+);
+
+export const worker_deactivate_device = spacetimedb.reducer({ device_id: t.u64() }, (ctx, { device_id }) => {
+  requireService(ctx);
+  const device = ctx.db.device.id.find(device_id);
+  if (device?.active) ctx.db.device.id.update({ ...device, active: false });
+});
 // Reducers cannot return values. The worker supplies a unique `client_key` (e.g. a UUID) that is stored on the row and
 // is UNIQUE; it then finds the new row through its svc_evidence_job subscription by that key. Retrying with the same
 // key is a no-op, which makes job creation idempotent across worker restarts.
@@ -430,6 +453,11 @@ export const worker_invalidate_observation = spacetimedb.reducer(
     const o = ctx.db.observation.id.find(observation_id);
     if (!o) fail(`Observation ${observation_id} not found`);
     if (!o.invalidated) ctx.db.observation.id.update({ ...o, invalidated: true });
+    for (const impact of [...ctx.db.impact_event.iter()]) {
+      if (impact.source_id === String(o.id) || impact.source_id === o.source_id) {
+        ctx.db.impact_event.id.delete(impact.id);
+      }
+    }
   }
 );
 
@@ -587,6 +615,11 @@ function ensureGcSchedule(ctx: Ctx): void {
 function collectGarbage(ctx: Ctx): void {
   const now = ctx.timestamp.microsSinceUnixEpoch;
   const cutoff = now - GC_KEEP_AFTER_EXPIRY_S * MICROS_PER_S;
+  for (const presence of ctx.db.user_presence.iter()) {
+    if (presence.last_seen_at.microsSinceUnixEpoch < now - 120n * MICROS_PER_S) {
+      ctx.db.user_presence.connection_id.delete(presence.connection_id);
+    }
+  }
   for (const o of [...ctx.db.observation.iter()]) {
     if (o.expires_at.microsSinceUnixEpoch < cutoff) ctx.db.observation.id.delete(o.id);
   }

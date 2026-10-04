@@ -66,9 +66,42 @@ function placeOf(conn: Conn, id: string) {
   return rows(conn.db.place.iter()).find((p) => p.id === id);
 }
 
+function sourceIsVisible(conn: Conn, sourceType: string, sourceId: string): boolean {
+  if (sourceType === "post" && sourceId.startsWith("post:")) {
+    const post = rows(conn.db.svcPost.iter()).find(p => String(p.id) === sourceId.slice(5));
+    return !!post && !post.deleted && !post.hidden;
+  }
+  if (sourceType === "comment" && sourceId.startsWith("comment:")) {
+    const comment = rows(conn.db.svcComment.iter()).find(c => String(c.id) === sourceId.slice(8));
+    if (!comment || comment.deleted || comment.hidden) return false;
+    const post = rows(conn.db.svcPost.iter()).find(p => p.id === comment.postId);
+    return !!post && !post.deleted && !post.hidden;
+  }
+  return true;
+}
+
+function publicFactors(score: ReturnType<typeof scoreEvidence>) {
+  const { contributorIds: _privateIds, ...safe } = score.factors;
+  return safe;
+}
+
+function queryPlan(q: { planJson?: string }, fallback: PlanResponse): PlanResponse {
+  return parseJson<PlanResponse | null>(q.planJson, null) ?? fallback;
+}
+
+function mergeJobPlans(a: PlanResponse, b: PlanResponse, placeName: string): PlanResponse {
+  const dimensions = [...new Map([...a.dimensions, ...b.dimensions].map(d => [d.key, d])).values()];
+  const controls = [...new Map([...(a.survey?.controls ?? []), ...(b.survey?.controls ?? [])]
+    .map(c => [c.dimension_key, c])).values()];
+  return { ...a, dimensions, survey: { allow_note: true, controls,
+    question: dimensions.every(d => d.key.startsWith("other:")) ? (a.survey?.question ?? b.survey!.question)
+      : `Quick question about ${placeName}: what are ${dimensions.map(d => d.label.toLowerCase()).join(" and ")} like right now?`,
+  } };
+}
+
 function scoringObs(conn: Conn, placeId: string, now: number): ScoringObservation[] {
   return rows(conn.db.svcObservation.iter())
-    .filter((o) => o.placeId === placeId)
+    .filter((o) => o.placeId === placeId && sourceIsVisible(conn, o.sourceType, o.sourceId))
     .map((o) => ({
       id: String(o.id),
       dimension: o.dimension,
@@ -133,6 +166,7 @@ export async function tick(conn: Conn): Promise<void> {
   const now = nowMs();
 
   const stages: [string, () => Promise<void>][] = [
+    ["invalidateRemovedContributions", () => invalidateRemovedContributions(conn)],
     ["ingestResponses", () => ingestResponses(conn, cfg, now)],
     ["summarizePendingPosts", () => summarizePendingPosts(conn, cfg, now)],
     ["processPlanningQueries", () => processPlanningQueries(conn, cfg, now)],
@@ -260,6 +294,15 @@ async function applyPostReactions(
       }
     }
     handledReactions.add(key);
+  }
+}
+
+// Also repairs evidence created before transactional deletion invalidation was installed.
+async function invalidateRemovedContributions(conn: Conn) {
+  for (const observation of rows(conn.db.svcObservation.iter())) {
+    if (!observation.invalidated && !sourceIsVisible(conn, observation.sourceType, observation.sourceId)) {
+      await conn.reducers.workerInvalidateObservation({ observationId: observation.id });
+    }
   }
 }
 
@@ -410,6 +453,9 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
       let jobId: bigint;
       if (attach) {
         jobId = BigInt(attach.id);
+        const merged = mergeJobPlans(parseJson<PlanResponse>(jobs.find(j => j.id === attach.id)!.raw.planJson, plan), plan, place.name);
+        await conn.reducers.workerMergeJobPlan({ jobId, planJson: JSON.stringify(merged),
+          dimensionKeysJson: JSON.stringify(merged.dimensions.map(d => d.key)) });
         await conn.reducers.workerAttachQuery({ queryId: q.id, jobId });
         await event(conn, q.id, "collecting", "Joining an in-progress check for this place");
       } else {
@@ -559,6 +605,8 @@ async function promptWave(
   // entire wave roll back silently.
   const requesterIds = attached.map((q) => hexOf(q.requester));
 
+  const foreground = new Set(rows(conn.db.svcUserPresence.iter())
+    .filter((p) => now - toMs(p.lastSeenAt) < 120_000).map((p) => hexOf(p.identity)));
   const candidates = rows(conn.db.svcUserLocation.iter()).map((loc) => {
     const profile = rows(conn.db.svcUserProfile.iter()).find((p) => p.identity.isEqual(loc.identity));
     return {
@@ -567,8 +615,8 @@ async function promptWave(
       lng: loc.lng,
       source: loc.source as "gps" | "demo",
       capturedAtMs: toMs(loc.capturedAt),
-      // A fresh location means the app is open, so Activity can deliver the prompt even without Web Push.
-      hasActiveDevice: deviceOwners.has(hexOf(loc.identity)) || now - toMs(loc.capturedAt) < 120_000,
+      // An open foreground session can receive prompts without a push subscription.
+      hasActiveDevice: deviceOwners.has(hexOf(loc.identity)) || foreground.has(hexOf(loc.identity)),
       notificationsPaused: profile?.notificationsPaused ?? false,
       lastPromptedAtMs: lastPrompt.get(hexOf(loc.identity)) ?? null,
       accuracyM: loc.accuracyM,
@@ -627,11 +675,21 @@ async function promptWave(
       ? { label: "Are you there right now?", passLabel: `I'm not at ${place.name}` }
       : null;
   const kindOf = new Map(plan.dimensions.map((d) => [d.key, d.kind]));
+  const needed = new Set<string>();
+  const liveObs = scoringObs(conn, place.id, now);
+  for (const q of attached.filter(q => ["planning", "collecting", "synthesizing"].includes(q.status))) {
+    const ownPlan = queryPlan(q, plan);
+    const ownScore = scoreEvidence({ observations: liveObs, required: ownPlan.dimensions, nowMs: now });
+    for (const dimension of ownScore.dimensions) {
+      if (dimension.firsthandSupport < 0.5 || dimension.conf < cfg.SUFFICIENT_SCORE) needed.add(dimension.key);
+    }
+  }
   const dimensionControls = survey.controls
     .filter((c) => c.dimension_key !== PRESENCE_KEY)
     // A presence control costs one of the three slots. Keep objective checks (seats, noise)
     // ahead of opinions so the dropped control is not the one a follow-up question needs.
-    .sort((a, b) => Number(kindOf.get(a.dimension_key) === "subjective") - Number(kindOf.get(b.dimension_key) === "subjective"));
+    .sort((a, b) => Number(!needed.has(a.dimension_key)) - Number(!needed.has(b.dimension_key)) ||
+      Number(kindOf.get(a.dimension_key) === "subjective") - Number(kindOf.get(b.dimension_key) === "subjective"));
   // The reducer accepts 1-3 controls and rejects the whole batch otherwise, so the presence
   // control costs one dimension slot rather than silently failing the wave.
   const controls = presence
@@ -663,8 +721,8 @@ async function promptWave(
   for (const r of recips) {
     const device = devices.find((d) => d.owner.isEqual(r.responder));
     if (device && pushEnabled()) {
-      const result = await sendPush(
-        { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
+      await sendToDevice(
+        conn, device,
         {
           title: `Quick question about ${place.name}`,
           body: survey.question.slice(0, 140),
@@ -672,9 +730,6 @@ async function promptWave(
           tag: `prompt-${batch?.id}`,
         },
       );
-      if (result === "gone") {
-        /* device may be stale; still mark notified so we don't loop */
-      }
     }
     await conn.reducers.workerMarkNotified({ recipientId: r.id });
   }
@@ -758,8 +813,17 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
       expandAfterMs: cfg.EXPAND_AFTER_S * 1000,
     });
 
-    if (score.sufficient) {
-      for (const q of attached) await synthesizeQuery(conn, q.id, plan, place, obs, score, false);
+    for (const q of attached) {
+      const ownPlan = queryPlan(q, plan);
+      const ownScore = scoreEvidence({ observations: obs, required: ownPlan.dimensions, nowMs: now,
+        sufficientScore: cfg.SUFFICIENT_SCORE });
+      if (ownScore.sufficient) await synthesizeQuery(conn, q.id, ownPlan, place, obs, ownScore, false);
+    }
+    const waiting = attached.filter(q => {
+      const live = rows(conn.db.svcQuery.iter()).find(row => row.id === q.id);
+      return live && ["planning", "collecting", "synthesizing"].includes(live.status);
+    });
+    if (!waiting.length) {
       await conn.reducers.workerSetJobStatus({ jobId: job.id, status: "done", confidenceJson: JSON.stringify(score) });
       continue;
     }
@@ -784,25 +848,11 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
       continue;
     }
     if (pastDeadline) {
-      for (const q of attached) {
-        if (obs.length === 0) {
-          await conn.reducers.workerSetAnswer({
-            queryId: q.id,
-            status: "insufficient",
-            answerJson: JSON.stringify({
-              headline: `Not enough fresh evidence about ${place.name}.`,
-              recommendation: "insufficient",
-              summary: "Nobody nearby answered in time, and cached reports were too old or missing.",
-              supporting: [],
-              caveats: ["Try again shortly: a later answer will use any late responses."],
-              planner: plan.planner,
-              confidence: { score: score.score, level: score.level, ceiling: score.ceiling },
-              factors: score.factors,
-            }),
-          });
-        } else {
-          await synthesizeQuery(conn, q.id, plan, place, obs, score, false);
-        }
+      for (const q of waiting) {
+        const ownPlan = queryPlan(q, plan);
+        const ownScore = scoreEvidence({ observations: obs, required: ownPlan.dimensions, nowMs: now,
+          sufficientScore: cfg.SUFFICIENT_SCORE });
+        await synthesizeQuery(conn, q.id, ownPlan, place, obs, ownScore, false);
       }
       await conn.reducers.workerSetJobStatus({
         jobId: job.id,
@@ -823,54 +873,43 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
  * the answer when the evidence has materially changed. Keyed on an evidence signature so
  * each change produces exactly one update, not one per 2 s tick.
  */
+function evidenceSignature(answer: { sourceCount?: number; confidence?: {level?: string};
+  dimensions?: {key: string; modalValue: string | null; count?: number}[];
+  conflicts?: {dimension: string; severity: string; labels: string[]}[];
+  factors?: {observations?: {id: string; weight: number}[]} }) {
+  return JSON.stringify({ count: answer.sourceCount ?? 0, level: answer.confidence?.level ?? "Low",
+    dimensions: (answer.dimensions ?? []).map(d => [d.key, d.modalValue, d.count === 0]).sort(),
+    conflicts: answer.conflicts ?? [],
+    sources: (answer.factors?.observations ?? []).filter(o => o.weight > 0).map(o => o.id).sort(),
+  });
+}
+
+function scoreSignature(score: ReturnType<typeof scoreEvidence>) {
+  return evidenceSignature({ sourceCount: score.contributors, confidence: score, dimensions: score.dimensions,
+    conflicts: score.conflicts, factors: score.factors });
+}
+
 async function updateLateAnswers(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
   for (const q of rows(conn.db.svcQuery.iter())) {
     if (q.status !== "answered" && q.status !== "insufficient") continue;
     if (q.evidenceJobId === undefined || q.evidenceJobId === null) continue;
-    const job = rows(conn.db.svcEvidenceJob.iter()).find((j) => j.id === q.evidenceJobId);
-    if (!job) continue;
-    // The window runs from the deadline the job was given, not from when it closed.
-    if (now - toMs(job.deadlineAt) > cfg.LATE_ACCEPT_S * 1000) continue;
-    const plan = parseJson<PlanResponse | null>(job.planJson, null);
+    const job = rows(conn.db.svcEvidenceJob.iter()).find(j => j.id === q.evidenceJobId);
+    if (!job || now - toMs(job.deadlineAt) > cfg.LATE_ACCEPT_S * 1000) continue;
+    const plan = queryPlan(q, parseJson<PlanResponse>(job.planJson, null as unknown as PlanResponse));
     if (!plan) continue;
     const place = placeOf(conn, q.placeId);
     if (!place) continue;
-
     const obs = scoringObs(conn, q.placeId, now);
-    const score = scoreEvidence({
-      observations: obs,
-      required: plan.dimensions.map((d) => ({ key: d.key, kind: d.kind })),
-      nowMs: now,
-      sufficientScore: cfg.SUFFICIENT_SCORE,
-    });
-    const signature = `${score.contributors}:${score.level}:${score.dimensions.map((d) => d.modalValue ?? "-").join(",")}`;
-    const key = String(q.id);
-    const previous = answeredSignature.get(key);
-    if (previous === undefined) {
-      // First sighting after a restart: record what the stored answer already reflects.
-      const stored = parseJson<{ confidence?: { level?: string }; sourceCount?: number }>(q.answerJson, {});
-      answeredSignature.set(
-        key,
-        `${stored.sourceCount ?? 0}:${stored.confidence?.level ?? "-"}:${score.dimensions.map((d) => d.modalValue ?? "-").join(",")}`,
-      );
-      if (answeredSignature.get(key) === signature) continue;
-    } else if (previous === signature) {
-      continue;
-    }
-
-    // Only an answer worth re-reading: new evidence that is usable, or a verdict that moved.
-    const stored = parseJson<{ confidence?: { level?: string }; sourceCount?: number }>(q.answerJson, {});
-    const gainedContributors = score.contributors > (stored.sourceCount ?? 0);
-    const levelMoved = !!stored.confidence?.level && stored.confidence.level !== score.level;
-    const nowAnswerable = q.status === "insufficient" && score.contributors > 0;
-    if (!gainedContributors && !levelMoved && !nowAnswerable) {
-      answeredSignature.set(key, signature);
-      continue;
-    }
-
-    answeredSignature.set(key, signature);
-    await event(conn, q.id, "updated", "A later answer came in, updating");
+    const score = scoreEvidence({ observations: obs, required: plan.dimensions, nowMs: now,
+      sufficientScore: cfg.SUFFICIENT_SCORE });
+    const signature = scoreSignature(score);
+    const stored = parseJson<Parameters<typeof evidenceSignature>[0]>(q.answerJson, {});
+    const previous = answeredSignature.get(String(q.id)) ?? evidenceSignature(stored);
+    if (previous === signature) continue;
+    // Empty insufficient answers need no rewrite just to add a diagnostics schema.
+    if (q.status === "insufficient" && score.contributors === 0) continue;
     await synthesizeQuery(conn, q.id, plan, place, obs, score, false, "update");
+    await event(conn, q.id, "updated", "Reports changed, updating the answer");
   }
 }
 
@@ -881,6 +920,16 @@ function withConflictCaveat(caveats: string[], conflicts: ReturnType<typeof scor
     .map((c) => `${c.dimension.replace(/^other:/, "").replace(/_/g, " ")} (${c.labels.join(" vs ")})`)
     .join("; ");
   return [`Reports disagree on ${what}; confidence is capped.`, ...caveats];
+}
+
+async function sendToDevice(
+  conn: Conn,
+  device: { id: bigint; endpoint: string; p256Dh: string; auth: string },
+  payload: Parameters<typeof sendPush>[1],
+) {
+  const result = await sendPush({ endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth }, payload);
+  if (result === "gone") await conn.reducers.workerDeactivateDevice({ deviceId: device.id });
+  return result;
 }
 
 async function synthesizeQuery(
@@ -899,7 +948,7 @@ async function synthesizeQuery(
     await conn.reducers.workerSetQueryStatus({ queryId, status: "synthesizing" });
   }
   if (mode === "first") {
-    await event(conn, queryId, "enough", cacheHit ? "Reusing fresh evidence, no one interrupted" : "Enough evidence");
+    await event(conn, queryId, "enough", cacheHit ? "Reusing fresh evidence, no one interrupted" : score.contributors > 0 ? "Fresh reports collected" : "No fresh reports received");
   }
   // Only evidence for THIS question's dimensions. `obs` is everything live at the place, so
   // without this an unrelated query's observations reach the answer — the symptom was a
@@ -932,9 +981,8 @@ async function synthesizeQuery(
   // answered -> insufficient is not a legal transition, so a refreshed answer that has become
   // unsure (for example after a late conflicting report) stays "answered" and says so in text.
   const status =
-    score.contributors === 0 || (synth.recommendation === "insufficient" && q.status !== "answered")
-      ? "insufficient"
-      : "answered";
+    q.status !== "answered" && (score.contributors === 0 || synth.recommendation === "insufficient")
+      ? "insufficient" : "answered";
   // scoreEvidence already counts distinct firsthand contributors on the required dimensions
   // and derives the confidence ceiling from that same number, so reuse it: a separate count
   // over every observation at the place contradicts the confidence level shown next to it.
@@ -953,10 +1001,11 @@ async function synthesizeQuery(
       sourceCount,
       updatedAtMs: newest || nowMs(),
       cacheHit,
-      factors: score.factors,
+      factors: publicFactors(score),
       dimensions: score.dimensions,
     }),
   });
+  answeredSignature.set(String(queryId), scoreSignature(score));
   await event(
     conn,
     queryId,
@@ -979,8 +1028,8 @@ async function synthesizeQuery(
         lastImpactPush.set(o.contributorId, nowMs());
         const device = rows(conn.db.svcDevice.iter()).find((d) => hexOf(d.owner) === o.contributorId && d.active);
         if (device && pushEnabled()) {
-          await sendPush(
-            { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
+          await sendToDevice(
+            conn, device,
             {
               title: "Your update helped someone",
               body: `Your report about ${place.name} answered a question.`,
@@ -998,8 +1047,8 @@ async function synthesizeQuery(
   const requester = hexOf(q.requester);
   const device = rows(conn.db.svcDevice.iter()).find((d) => hexOf(d.owner) === requester && d.active);
   if (device && pushEnabled()) {
-    await sendPush(
-      { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
+    await sendToDevice(
+      conn, device,
       {
         title: mode === "update" ? `Updated answer: ${synth.headline}` : synth.headline,
         body: `${score.level} confidence · ${sourceCount} source${sourceCount === 1 ? "" : "s"}`,
@@ -1072,8 +1121,8 @@ async function evaluateWatches(conn: Conn, now: number) {
     const device = rows(conn.db.svcDevice.iter()).find((d) => hexOf(d.owner) === owner && d.active);
     const n = reading.contributors;
     if (device && pushEnabled()) {
-      await sendPush(
-        { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
+      await sendToDevice(
+        conn, device,
         {
           title: `${target.phrase} at ${place.name}`,
           body: `${reading.valueLabel} · ${n} report${n === 1 ? "" : "s"}`,

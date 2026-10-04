@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, getDimension, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
 import { CLIENT_ID, emailOf, useDevMode, useOidc } from "./auth";
 import { clearLegacyToken, list, useDb } from "./spacetime";
+import { CLAIM_VALID_M, savePlaceClaim, useLocation } from "./location";
+import { detachPush, enablePush } from "./push";
 
 type Route =
   | { name: "home" }
@@ -84,7 +86,7 @@ export default function App() {
 
   return (
     <div className={showTabs ? "app with-tabs" : "app"}>
-      <header className="app-header"><a className="brand" href="#/" aria-label="ProxiPrompt home">ProxiPrompt</a><span className="community-label">Ann Arbor</span></header>
+      <header className="app-header"><a className="brand" href="#/" aria-label="ProxiPrompt home"><svg className="brand-logo" viewBox="480 258 410 640" aria-hidden="true"><image href="/logo.png" width="1254" height="1254" /></svg>ProxiPrompt</a><span className="community-label">Ann Arbor</span></header>
       {pushed && signedIn ? (
         <button className="back" type="button" onClick={() => history.back()}>
           <Icon name="back" /> Back
@@ -949,7 +951,7 @@ function ResponseThanks() {
     <div className="response-thanks" role="status">
       <svg className="sent-check" width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden="true">
         <circle cx="22" cy="22" r="21" fill="currentColor" />
-        <path d="m13 22 6 6 12-13" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="m13 22 6 6 12-13" stroke="var(--on-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       <div><h2>Thanks, signal sent.</h2><p>Your response is part of the picture.</p></div>
     </div>
@@ -1218,56 +1220,11 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
   }, [profile?.username]);
   const loc = list(conn.db.myLocation.iter())[0];
   const [paused, setPaused] = useState(profile?.notificationsPaused ?? false);
-  const [demo, setDemo] = useState<string>(localStorage.getItem("pp.demoPlace") ?? "");
-  const [gpsError, setGpsError] = useState("");
-  const [gpsFix, setGpsFix] = useState<{ lat: number; lng: number } | null>(null);
-  const [claim, setClaim] = useState<{ id: string; lat: number; lng: number } | null>(loadPlaceClaim);
+  const { demo, setDemo, gpsError, gpsFix, claim, setClaim } = useLocation();
   const [pushMsg, setPushMsg] = useState("");
+  const [leaving, setLeaving] = useState(false);
   const [diag, setDiag] = useState(localStorage.getItem("pp.diag") === "1");
 
-  useEffect(() => {
-    if (!conn) return;
-    if (demo) {
-      const p = CATALOG_PLACES.find((x) => x.id === demo);
-      if (!p) return;
-      localStorage.setItem("pp.demoPlace", demo);
-      setGpsFix(null);
-      setGpsError("");
-      // Picking a demo building is itself a claim: they named the building.
-      void conn.reducers.updateLocation({ lat: p.lat, lng: p.lng, accuracyM: 15, source: "demo", claimedPlaceId: p.id });
-      return;
-    }
-    localStorage.removeItem("pp.demoPlace");
-    if (!navigator.geolocation) {
-      setGpsError("This browser has no GPS");
-      return;
-    }
-    setGpsError("");
-    const watch = navigator.geolocation.watchPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : 50;
-        setGpsFix({ lat, lng });
-        // A claim only holds near where it was made; past that we are somewhere else.
-        const stillHere = claim && haversineM(claim.lat, claim.lng, lat, lng) <= CLAIM_VALID_M;
-        void conn.reducers
-          .updateLocation({
-            lat,
-            lng,
-            accuracyM: accuracy,
-            source: "gps",
-            claimedPlaceId: stillHere ? claim.id : "",
-          })
-          .catch((err: unknown) => {
-            setGpsError(err instanceof Error ? err.message : "Could not save GPS");
-          });
-      },
-      (err) => setGpsError(err.message || "Location permission was denied"),
-      { enableHighAccuracy: true, maximumAge: 0 },
-    );
-    return () => navigator.geolocation.clearWatch(watch);
-  }, [conn, demo, claim]);
 
   return (
     <section>
@@ -1377,16 +1334,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       <div className="setting-section">
       <label className="label" htmlFor="demo-location-select">Location</label>
       <p className="section-help">Use your GPS or pick a simulated campus location for the demo.</p>
-      <select id="demo-location-select" className="input" value={demo} onChange={(e) => {
-        const next = e.target.value;
-        if (next) localStorage.setItem("pp.demoPlace", next);
-        else {
-          localStorage.removeItem("pp.demoPlace");
-          setGpsFix(null);
-        }
-        setGpsError("");
-        setDemo(next);
-      }}>
+      <select id="demo-location-select" className="input" value={demo} onChange={(e) => setDemo(e.target.value)}>
         <option value="">Use real GPS</option>
         {DEMO_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
@@ -1407,7 +1355,12 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         <h2 id="developer-heading">Developer tools</h2>
         <p className="section-help">Options used to test this app.</p>
         <div className="group">
-        {CLIENT_ID ? <button className="setting-button" type="button" aria-pressed={dev} onClick={() => setDev(!dev)}><span><strong>Demo session</strong><small>{dev ? "Using a local demo identity instead of sign-in." : "Switch to a local demo identity."}</small></span><span className={`switch ${dev ? "" : "off"}`} aria-hidden="true" /></button> : null}
+        {CLIENT_ID ? <button className="setting-button" type="button" aria-pressed={dev} disabled={leaving} onClick={async () => {
+          setLeaving(true);
+          try { await detachPush(conn); setDev(!dev); }
+          catch (err) { setToast((err as Error).message); }
+          finally { setLeaving(false); }
+        }}><span><strong>Demo session</strong><small>{dev ? "Using a local demo identity instead of sign-in." : "Switch to a local demo identity."}</small></span><span className={`switch ${dev ? "" : "off"}`} aria-hidden="true" /></button> : null}
         <label className="setting-button">
           <span><strong>Developer diagnostics</strong><small>Show technical connection details for troubleshooting.</small></span>
           <input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); localStorage.setItem("pp.diag", e.target.checked ? "1" : "0"); }} />
@@ -1418,10 +1371,16 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       <section className="preferences-section account-section" aria-labelledby="account-heading">
         <h2 id="account-heading">Account</h2>
         <div className="group">
-        <button className="setting-button" type="button" onClick={() => {
-            clearLegacyToken();
-            setDev(false);
-            if (auth) void auth.signoutRedirect().catch(() => auth.removeUser());
+        <button className="setting-button" type="button" disabled={leaving} onClick={async () => {
+            setLeaving(true);
+            try {
+              await detachPush(conn);
+              clearLegacyToken();
+              setDev(false);
+              if (auth?.isAuthenticated) await auth.signoutRedirect().catch(() => auth.removeUser());
+              else if (auth) await auth.removeUser();
+            } catch (err) { setToast((err as Error).message); }
+            finally { setLeaving(false); }
           }}
         >
           <span><strong>Sign out</strong><small>Leave this session on this device.</small></span><span className="setting-chevron" aria-hidden="true">›</span>
@@ -1473,27 +1432,6 @@ function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
   );
 }
 
-async function enablePush(conn: NonNullable<ReturnType<typeof useDb>["conn"]>): Promise<string> {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "This browser cannot receive Web Push.";
-  const reg = await navigator.serviceWorker.register("/sw.js");
-  const perm = await Notification.requestPermission();
-  if (perm !== "granted") return "Notifications were not granted.";
-  const key = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
-  if (!key) return "VITE_VAPID_PUBLIC_KEY is not set. Generate keys and restart the web app.";
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(key),
-  });
-  const json = sub.toJSON();
-  await conn.reducers.registerDevice({
-    endpoint: json.endpoint!,
-    p256Dh: json.keys!.p256dh!,
-    auth: json.keys!.auth!,
-    userAgent: navigator.userAgent.slice(0, 300),
-  });
-  return "Notifications enabled.";
-}
-
 function MiniMap({ lat, lng }: { lat: number; lng: number }) {
   const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const pad = 0.008;
@@ -1501,36 +1439,4 @@ function MiniMap({ lat, lng }: { lat: number; lng: number }) {
     ? `https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(key)}&q=${lat},${lng}&zoom=16`
     : `https://www.openstreetmap.org/export/embed.html?bbox=${lng - pad},${lat - pad},${lng + pad},${lat + pad}&layer=mapnik&marker=${lat},${lng}`;
   return <iframe className="minimap" title="Current location" src={src} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />;
-}
-
-/** A claimed building only applies while you are still near where you claimed it. */
-const CLAIM_VALID_M = 80;
-
-const PLACE_CLAIM_KEY = "pp.placeClaim";
-
-function loadPlaceClaim(): { id: string; lat: number; lng: number } | null {
-  try {
-    const raw = localStorage.getItem(PLACE_CLAIM_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { id?: unknown; lat?: unknown; lng?: unknown };
-    if (typeof parsed.id !== "string" || typeof parsed.lat !== "number" || typeof parsed.lng !== "number") return null;
-    return { id: parsed.id, lat: parsed.lat, lng: parsed.lng };
-  } catch {
-    return null;
-  }
-}
-
-function savePlaceClaim(
-  next: { id: string; lat: number; lng: number } | null,
-  setClaim: (value: { id: string; lat: number; lng: number } | null) => void,
-) {
-  setClaim(next);
-  if (!next) localStorage.removeItem(PLACE_CLAIM_KEY);
-  else localStorage.setItem(PLACE_CLAIM_KEY, JSON.stringify(next));
-}
-
-function urlBase64ToUint8Array(base64: string) {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }

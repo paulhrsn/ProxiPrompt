@@ -100,6 +100,7 @@ interface Tables {
   svcPost: PostRow[];
   svcComment: CommentRow[];
   svcUserLocation: UserLocationRow[];
+  svcUserPresence: {connectionId:string; identity:Identity; lastSeenAt:Timestamp; svc:number}[];
   svcUserProfile: UserProfileRow[];
   svcDevice: DeviceRow[];
   svcImpactEvent: ImpactEventRow[];
@@ -134,7 +135,7 @@ export function makeFakeConn(now: number): FakeConn {
   const rows: Tables = {
     place: [], svcQuery: [], svcQueryEvent: [], svcEvidenceJob: [], svcPromptBatch: [],
     svcPromptRecipient: [], svcPromptResponse: [], svcObservation: [], svcPost: [],
-    svcComment: [], svcUserLocation: [], svcUserProfile: [], svcDevice: [], svcImpactEvent: [],
+    svcComment: [], svcUserLocation: [], svcUserPresence: [], svcUserProfile: [], svcDevice: [], svcImpactEvent: [],
     svcWatch: [],
   };
   const calls: { name: string; args: unknown }[] = [];
@@ -224,6 +225,19 @@ export function makeFakeConn(now: number): FakeConn {
   });
 
   // ---------- evidence jobs ----------
+  define<{jobId: bigint; planJson: string; dimensionKeysJson: string}>("workerMergeJobPlan", (a) => {
+    const job = rows.svcEvidenceJob.find(j => j.id === a.jobId);
+    if (!job || job.status !== "collecting") throw new ReducerError("Only collecting jobs can add requirements");
+    if ((JSON.parse(job.dimensionKeysJson) as string[]).some(k => !JSON.parse(a.dimensionKeysJson).includes(k))) {
+      throw new ReducerError("Existing requirements cannot be removed");
+    }
+    job.planJson = a.planJson;
+    job.dimensionKeysJson = a.dimensionKeysJson;
+  });
+  define<{deviceId: bigint}>("workerDeactivateDevice", (a) => {
+    const device = rows.svcDevice.find(d => d.id === a.deviceId);
+    if (device) device.active = false;
+  });
   define<{
     clientKey: string; placeId: string; intentKey: string; dimensionKeysJson: string; planJson: string; deadlineAtMicros: bigint;
   }>("workerCreateJob", (a) => {
@@ -354,6 +368,7 @@ export function makeFakeConn(now: number): FakeConn {
     const o = rows.svcObservation.find((row) => row.id === a.observationId);
     if (!o) throw new ReducerError(`Observation ${a.observationId} not found`);
     o.invalidated = true;
+    rows.svcImpactEvent = rows.svcImpactEvent.filter(i => i.sourceId !== String(o.id) && i.sourceId !== o.sourceId);
   });
 
   define<{ contributor: Identity; sourceType: string; sourceId: string; queryId: bigint; kind: string }>(
@@ -420,6 +435,7 @@ export function makeFakeConn(now: number): FakeConn {
     svcPost: { iter: () => rows.svcPost },
     svcComment: { iter: () => rows.svcComment },
     svcUserLocation: { iter: () => rows.svcUserLocation },
+    svcUserPresence: { iter: () => rows.svcUserPresence },
     svcUserProfile: { iter: () => rows.svcUserProfile },
     svcDevice: { iter: () => rows.svcDevice },
     svcImpactEvent: { iter: () => rows.svcImpactEvent },
@@ -455,10 +471,13 @@ export function addUser(
   label: string,
   opts: {
     lat?: number; lng?: number; source?: string; ageMs?: number; device?: boolean;
-    paused?: boolean; claimedPlaceId?: string;
+    paused?: boolean; claimedPlaceId?: string; foreground?: boolean;
   } = {},
 ): Identity {
   const identity = identityFor(label);
+  if (opts.foreground !== false) conn.rows.svcUserPresence.push({
+    connectionId: label, identity, lastSeenAt: ts(conn.now), svc: 0,
+  });
   conn.rows.svcUserProfile.push({
     identity, username: label, avatarSeed: label, defaultAttribution: "anonymous",
     notificationsPaused: opts.paused ?? false, isAdmin: false, createdAt: ts(conn.now), svc: 0,

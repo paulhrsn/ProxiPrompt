@@ -7,6 +7,7 @@
 // Worker views are query-builder views: `service_role WHERE identity = <sender>` right-semijoined to the table on the
 // constant `svc` column. The query engine maintains them incrementally (no .iter() re-scan on every change).
 import { t } from 'spacetimedb/server';
+import { requesterAnswer } from './lib';
 import spacetimedb, {
   comment,
   device,
@@ -21,6 +22,7 @@ import spacetimedb, {
   query_event,
   report,
   user_location,
+  user_presence,
   user_profile,
   watch,
 } from './schema';
@@ -48,7 +50,7 @@ export const my_watches = spacetimedb.view({ name: 'my_watches', public: true },
 
 export const my_queries = spacetimedb.view({ name: 'my_queries', public: true }, t.array(query.rowType), (ctx) => [
   ...ctx.db.query.requester.filter(ctx.sender),
-]);
+].map((q) => ({ ...q, answer_json: requesterAnswer(q.answer_json) })));
 
 export const my_query_events = spacetimedb.view(
   { name: 'my_query_events', public: true },
@@ -330,4 +332,10 @@ export const svc_report = spacetimedb.view({ name: 'svc_report', public: true },
   ctx.from.service_role
     .where((s) => s.identity.eq(ctx.sender))
     .rightSemijoin(ctx.from.report, (s, r) => s.svc.eq(r.svc))
+);
+
+export const svc_user_presence = spacetimedb.view(
+  { name: 'svc_user_presence', public: true }, t.array(user_presence.rowType),
+  (ctx) => ctx.from.service_role.where((s) => s.identity.eq(ctx.sender))
+    .rightSemijoin(ctx.from.user_presence, (s, r) => s.svc.eq(r.svc))
 );

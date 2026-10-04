@@ -357,6 +357,9 @@ export type SvcReport = __Infer<typeof SvcReport>;
 export const SvcUserLocation = __t.object("SvcUserLocation", {});
 export type SvcUserLocation = __Infer<typeof SvcUserLocation>;
 
+export const SvcUserPresence = __t.object("SvcUserPresence", {});
+export type SvcUserPresence = __Infer<typeof SvcUserPresence>;
+
 export const SvcUserProfile = __t.object("SvcUserProfile", {});
 export type SvcUserProfile = __Infer<typeof SvcUserProfile>;
 
@@ -374,6 +377,14 @@ export const UserLocation = __t.object("UserLocation", {
   svc: __t.u8(),
 });
 export type UserLocation = __Infer<typeof UserLocation>;
+
+export const UserPresence = __t.object("UserPresence", {
+  connectionId: __t.string(),
+  identity: __t.identity(),
+  lastSeenAt: __t.timestamp(),
+  svc: __t.u8(),
+});
+export type UserPresence = __Infer<typeof UserPresence>;
 
 export const UserProfile = __t.object("UserProfile", {
   identity: __t.identity(),

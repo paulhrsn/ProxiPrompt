@@ -191,6 +191,7 @@ class Bot {
   }
 
   private async setLocation(conn: DbConnection) {
+    await conn.reducers.heartbeat({ active: true });
     // About 10 m of wobble, well inside the 60 m demo match radius.
     const p = this.place;
     await conn.reducers.updateLocation({
