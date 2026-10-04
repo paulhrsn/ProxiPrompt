@@ -2,18 +2,13 @@
  * Watch a place in a real browser against the test stack (see scripts/e2e-browser.sh).
  */
 import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import { enterDemo, expect, test } from "./fixtures";
 
 const SHAPIRO = "Shapiro Undergraduate Library";
 
 async function onboard(page: Page, username: string) {
   await page.goto("/");
-  const yourName = page.getByRole("heading", { name: "Your name" });
-  const signIn = page.getByRole("heading", { name: "Sign in" });
-  await expect(yourName.or(signIn)).toBeVisible({ timeout: 20_000 });
-  if (await signIn.isVisible()) {
-    await page.getByRole("button", { name: "Dev", exact: true }).click();
-  }
+  await enterDemo(page);
   await page.getByLabel("Name").fill(username);
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: SHAPIRO })).toBeVisible();
@@ -35,6 +30,7 @@ test("notify me when seats open, then the watch reports it", async ({ browser })
     await asker.getByLabel("Question").fill("Tell me when seats open up");
     await asker.getByRole("button", { name: "Notify me when" }).click();
     await expect(asker).toHaveURL(/#\/q\/\d+/, { timeout: 15_000 });
+    await expect(asker.getByTestId("watch-note")).toBeVisible();
 
     await asker.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Questions" }).click();
     await expect(asker.getByRole("heading", { name: "Watching" })).toBeVisible({ timeout: 20_000 });

@@ -45,8 +45,7 @@ function askTarget(conn: Conn): string {
     .filter((q) => OPEN_QUERY.has(q.status))
     .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0];
   if (active) return `/q/${active.id}`;
-  const last = sessionStorage.getItem(LAST_QUERY);
-  if (last && queries.some((q) => String(q.id) === last)) return `/q/${last}`;
+  // A finished or refused question lives in Questions; the Ask tab is always a fresh form.
   return "/";
 }
 
@@ -116,7 +115,6 @@ export default function App() {
           <button type="button" aria-current={tab === "you" ? "page" : undefined} className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
         </nav>
       ) : null}
-      {!signedIn && CLIENT_ID ? <button className="sign-in-demo" type="button" onClick={() => setDev(true)}>Use demo session</button> : null}
     </div>
   );
 }
@@ -152,8 +150,11 @@ function SignedOut() {
     );
   }
   return (
-    <section className="sign-in">
-      <h1>Sign in</h1>
+    <section className="sign-in" aria-labelledby="sign-in-title">
+      <div className="sign-in-intro">
+        <h1 id="sign-in-title">Sign in</h1>
+        <p>Know before you go. Get local knowledge from the people already there.</p>
+      </div>
       <label className="label">
         Email
         <input className="input" type="email" autoComplete="email" placeholder="you@umich.edu" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -166,6 +167,9 @@ function SignedOut() {
       >
         Sign in
       </button>
+      <div className="sign-in-or" aria-hidden="true"><span>or</span></div>
+      <button className="btn ghost" type="button" onClick={() => setDev(true)}>Use demo session</button>
+      <p className="hint">Demo session skips sign-in and uses a local identity in this browser.</p>
     </section>
   );
 }
@@ -705,7 +709,11 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
   if (!q) return <p>Query not found.</p>;
   const place = list(conn.db.place.iter()).find((p) => p.id === q.placeId);
   const clar = q.clarificationJson ? JSON.parse(q.clarificationJson) as { question: string; options: string[] } : null;
-  const ans = q.answerJson ? JSON.parse(q.answerJson) as {
+  const refused = q.status === "refused";
+  const watching = list(conn.db.myWatches.iter()).some(
+    (w) => w.placeId === q.placeId && w.text === q.text && (w.status === "planning" || w.status === "active"),
+  );
+  const ans = !refused && q.answerJson ? JSON.parse(q.answerJson) as {
     headline: string; summary: string; supporting?: string[]; caveats?: string[];
     confidence?: { level?: string; score?: number; ceiling?: number };
     sourceCount?: number; updatedAtMs?: number; cacheHit?: boolean; factors?: unknown; planner?: string;
@@ -713,10 +721,12 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
   return (
     <section>
       <div className="status">
-        <h1>{ans?.headline || q.text}</h1>
-        {place?.name ? <p>{place.name}</p> : null}
+        <h1>{refused ? "I can't answer that one" : plain(ans?.headline) || q.text}</h1>
+        {refused ? <p className="body" data-testid="refusal-reason">{refusalReason(q.answerJson)}</p> : null}
+        {place?.name ? <p>{refused ? `${place.name} · ${q.text}` : place.name}</p> : null}
       </div>
-      {!ans && (
+      {watching ? <p className="watch-note" data-testid="watch-note">Watching this place too. If it changes, you will see it under Questions.</p> : null}
+      {!ans && !refused && (
         <ul className="timeline">
           {events.map((e) => <li key={String(e.id)} className={e === events.at(-1) ? "now" : ""}>{e.message}</li>)}
         </ul>
@@ -738,7 +748,7 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
           <button className="btn" disabled={!choice.trim()} onClick={() => conn.reducers.answerClarification({ queryId: q.id, choice: choice.trim() })}>Continue</button>
         </div>
       )}
-      {!ans && OPEN_QUERY.has(q.status) ? (
+      {!ans && !refused && OPEN_QUERY.has(q.status) ? (
         // A question that stalls (nobody nearby, agent down) would otherwise sit open forever.
         <button
           className="text"
@@ -750,8 +760,8 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
       ) : null}
       {ans && (
         <>
-          {ans.cacheHit ? <p>Reusing fresh evidence — no one interrupted</p> : null}
-          {ans.summary && ans.summary !== ans.headline ? <p className="body">{ans.summary}</p> : null}
+          {ans.cacheHit ? <p>Reusing fresh evidence, no one interrupted</p> : null}
+          {ans.summary && ans.summary !== ans.headline ? <p className="body">{plain(ans.summary)}</p> : null}
           <p>
             <span className={`level ${ans.confidence?.level}`}>{ans.confidence?.level ?? "Low"}</span>
             {typeof ans.sourceCount === "number" ? ` · ${ans.sourceCount} report${ans.sourceCount === 1 ? "" : "s"}` : ""}
@@ -759,12 +769,12 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
           </p>
           {ans.supporting?.length ? (
             <ul className="sources">
-              {ans.supporting.map((line) => <li key={line}>{line}</li>)}
+              {ans.supporting.map((line) => <li key={line}>{plain(line)}</li>)}
             </ul>
           ) : null}
           {ans.caveats?.length ? (
             <ul className="caveats">
-              {ans.caveats.map((line) => <li key={line}>{line}</li>)}
+              {ans.caveats.map((line) => <li key={line}>{plain(line)}</li>)}
             </ul>
           ) : null}
           {diag && <pre className="diag">{JSON.stringify({ planner: ans.planner, confidence: ans.confidence, factors: ans.factors }, null, 2)}</pre>}
@@ -774,13 +784,26 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
         {ans ? (
           <button className="text" type="button" onClick={() => setDiag(!diag)}>{diag ? "Hide details" : "Details"}</button>
         ) : null}
-        <button className="text" type="button" onClick={() => { sessionStorage.removeItem(LAST_QUERY); go("/"); }}>
+        <button className={refused ? "btn" : "text"} type="button" onClick={() => { sessionStorage.removeItem(LAST_QUERY); go("/"); }}>
           Ask something else
         </button>
       </div>
       <p className="hint">This question stays in Questions.</p>
     </section>
   );
+}
+
+/** Model text sometimes carries em/en dashes; show a comma-style break instead. */
+export function plain(text?: string): string {
+  return (text ?? "").replace(/\s*[\u2014\u2013]\s*/g, ", ");
+}
+
+function refusalReason(answerJson?: string): string {
+  try {
+    const reason = (JSON.parse(answerJson ?? "") as { summary?: string }).summary;
+    if (reason) return reason;
+  } catch { /* fall through */ }
+  return "ProxiPrompt only reports current, observable conditions at a place.";
 }
 
 type PromptRow = {
@@ -866,7 +889,7 @@ function ResponseThanks() {
         <circle cx="22" cy="22" r="21" fill="currentColor" />
         <path d="m13 22 6 6 12-13" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <div><h2>Thanks — signal sent.</h2><p>Your response is part of the picture.</p></div>
+      <div><h2>Thanks, signal sent.</h2><p>Your response is part of the picture.</p></div>
     </div>
   );
 }
@@ -1224,7 +1247,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         const claimed = claimNear?.id ? CATALOG_PLACES.find((p) => p.id === claimNear.id) : undefined;
         const label = claimed ? claimed.name : reading?.label;
         // Buildings 70-80 m apart are inside GPS error, so offer the choice whenever the
-        // nearest one has a close neighbour — not only when the two happen to be near-tied.
+        // nearest one has a close neighbour, not only when the two happen to be near-tied.
         const nearbyOptions = reading?.places[0]
           ? [reading.places[0], ...neighboringPlaces(reading.places[0])].slice(0, 3)
           : [];

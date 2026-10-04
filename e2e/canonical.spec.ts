@@ -4,7 +4,7 @@
  * at :5173: that app uses the live proxiprompt database.
  */
 import type { BrowserContext, Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import { enterDemo, expect, test } from "./fixtures";
 
 const SHAPIRO = "Shapiro Undergraduate Library";
 const UNION = "Michigan Union";
@@ -21,13 +21,7 @@ async function timeline(page: Page): Promise<string[]> {
 
 async function onboard(page: Page, username: string) {
   await page.goto("/");
-  const yourName = page.getByRole("heading", { name: "Your name" });
-  const signIn = page.getByRole("heading", { name: "Sign in" });
-  await expect(yourName.or(signIn)).toBeVisible({ timeout: 20_000 });
-  if (await signIn.isVisible()) {
-    await page.getByRole("button", { name: "Dev", exact: true }).click();
-  }
-  await expect(yourName).toBeVisible();
+  await enterDemo(page);
   await page.getByLabel("Name").fill(username);
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: SHAPIRO })).toBeVisible();
