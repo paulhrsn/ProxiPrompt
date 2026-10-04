@@ -68,6 +68,21 @@ State at handoff:
 - 2026-10-03 (correctness pass): **Social (Bluesky) evidence can inform a score but never satisfy sufficiency, and never counts as a nearby report.** Three scraped posts previously reached support 0.72 with ceiling 0.95 and answered a query with nobody asked, violating SPEC §1.1 in spirit. `DimensionScore.firsthandSupport` added and gated in `isSufficient`; social excluded from `contributors`/`ceilingFor`; social filed under its own `other:social_mention` dimension instead of hijacking `plan.dimensions[0]`. `ENABLE_BLUESKY` default left unchanged. SPEC §8 updated.
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
+## Session 15 orchestration log (2026-10-04, Opus orchestrating, Sonnet implementing)
+Goal (Paul): take the 4 open items; Sonnet subagents implement, Opus orchestrates and verifies; keep this log current. Workers never edit PROGRESS.md (except L3's assigned section); the orchestrator records every dispatch, verification and merge here.
+
+| Lane | Item | Branch / worktree | Isolation | Status |
+|---|---|---|---|---|
+| L1 | e2e suite isolation: canonical then watch flake on shared `proxiprompt-test` | `fix/e2e-isolation` / `../ProxiPrompt-lanes/fix-e2e-isolation` | sole owner of `proxiprompt-test`, ports 8081/5174 | dispatched |
+| L2 | shared bridge token on `/asi/query` (safe hosted deploy) | `feat/asi-bridge-token` / `../ProxiPrompt-lanes/feat-asi-bridge-token` | orchestrator `asi.ts` + agent `bridge.py`; no DB | dispatched |
+| L3 | PROGRESS "Known issues" cleanup (stale lines) | `docs/known-issues` / `../ProxiPrompt-lanes/docs-known-issues` | only the Known issues section | dispatched |
+| L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | dispatched |
+
+Infra started by orchestrator: `spacetime start` on :3000, shared agent on :8001 (LLM on). No live orchestrator/Vite on 8080/5173.
+
+Events:
+- 2026-10-04: base `106acec` (after `git pull` of Syn's UI commits). Worktrees created; local tokens copied to L1/L4.
+
 ## Work log
 - 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
 - 2026-10-04 session 13: **Re-verified the uncommitted session-12 work and fixed two watch bugs.** Guardrails 69/69 on `proxiprompt-test` (deadline fires with no orchestrator; a watch expires on the database clock; only the service can retire a watch). `pnpm e2e:browser` canonical demo passed. The watch spec failed: the watch was armed with option id `many_open` while the answers were stored as `many_seats` / "Many open seats", so it never said "Seats opened up". `watchReading` now treats a favorable label as a match. Re-ran `pnpm e2e:browser e2e/watch.spec.ts`: passed. A question that is not about open seats or quiet is ended with a reason instead of staying on "Setting up". Published to local `proxiprompt` without deleting data. Tests: core 125, orchestrator 44, agent 145.
