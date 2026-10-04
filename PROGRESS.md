@@ -60,7 +60,7 @@ Still needs Paul (human-only): register Agentverse handle `proxipromptagent`; re
 | `SKIP_PORT80` | scripts/dev.sh | set `1` to skip the sudo :80 forwarder (ngrok/phones only) |
 
 ## Human-gated steps (cannot be done by an agent)
-- SpacetimeAuth project + magic-link client ID (optional; demo works without).
+- ~~SpacetimeAuth project + client ID~~ done session 16 (`client_034a2MZhz5kQgykZquPJIl`). Still human: one real magic-link sign-up.
 - Google Cloud billing + Maps key (optional).
 - ~~VAPID keys~~ done. Still human: install PWA on iPhones (iOS ≥16.4) from the HTTPS ngrok URL via Share > Add to Home Screen, open from the icon, You tab > Enable notifications.
 - ~~ASI:One API key, Agentverse mailbox~~ done 2026-10-04. Still human: register the handle `proxipromptagent` on the Agentverse profile (not yet shown publicly), make a public ASI:One shared chat link of a fully answered workflow, record the demo video. `@proxiprompt` belongs to the team's ASI:One personal AI (an unrelated chatbot persona created at ASI:One sign-up; do not delete it, its link to the account/API key is unverified).
@@ -303,12 +303,9 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 - Reciprocal priority P1: built session 15 (SPEC §7); browser e2e of it pending.
 
 ## Next actions (for the next human/agent)
-Full specs are in `NEXT_STEPS.md`.
-
-1. **SpacetimeAuth** needs a project and client ID in `VITE_SPACETIMEAUTH_CLIENT_ID`. The OIDC path in `apps/web/src/auth.tsx` is already implemented and falls back to labeled dev auth until that ID exists.
-2. ~~MainCloud~~ done: `proxiprompt-mhacks` is live (guardrails 72/72). Run the team demo with `STDB_TARGET=maincloud pnpm dev`.
-3. **Fetch.ai deliverables that need Paul:** register handle `proxipromptagent`, a public ASI:One chat link of a finished answer, demo video, Devpost. The late-answer follow-up chat message is implemented.
-4. Later (Paul deferred): iPhone push; rehearse §14 with the team; hosted deploy (add a bridge token before `ORCH_HOST=0.0.0.0`).
+Full list with context: `NEXT_STEPS.md` section 10. Summary:
+1. Human-only: Agentverse handle `proxipromptagent`; public ASI:One chat link into `DEVPOST.md`; demo video; Devpost; one real magic-link sign-up; iPhone push; team rehearsal of `DEMO.md` on MainCloud.
+2. Optional agent work: owner-gated `claim_service_role`; answer severe conflicts early when no responders remain; hosted deploy (bridge token first).
 
 ## Sponsor tracks (assessment 2026-10-04)
 ### Fetch.ai ASI:One Agent Challenge: requirements met, deliverables outstanding
@@ -322,7 +319,7 @@ Already strong (say this in the pitch):
 - Real-time everywhere: the PWA timeline, prompt pop-up and Pulse are live subscriptions; the orchestrator is itself a subscriber reacting to row changes.
 - Clocks live in the database. A job deadline, a prompt expiry, and a 10-minute cleanup of old observations and rate buckets all run with no worker doing the work. 72 guardrail checks cover this (`pnpm --filter @proxiprompt/spacetimedb guardrails`).
 Gaps, in order of judge impact:
-1. **Auth is anonymous "dev auth".** `VITE_SPACETIMEAUTH_CLIENT_ID` unset, so SpacetimeAuth magic-link login is not in use. Needs a SpacetimeAuth project (human) then a short wiring check.
+1. ~~Auth is anonymous "dev auth".~~ Done session 16: SpacetimeAuth sign-in live with a "Use demo session" button.
 2. ~~Runs on local `spacetime start`, not MainCloud.~~ Done 2026-10-04: `proxiprompt-mhacks` on MainCloud, `STDB_TARGET=maincloud pnpm dev`.
 
 

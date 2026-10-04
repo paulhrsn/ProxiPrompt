@@ -109,13 +109,13 @@ If the orchestrator is down, deadlines silently stop happening and queries hang 
 
 ### 3b. SpacetimeAuth login
 
-**Status:** not started. **Needs Paul:** create a SpacetimeAuth project and an OIDC client with email magic link, then put the client ID in `apps/web/.env` as `VITE_SPACETIMEAUTH_CLIENT_ID` (a public identifier, not a secret). Redirect URIs: `http://localhost:5173`, `http://127.0.0.1:5173`, and the ngrok URL.
+**Status:** done 2026-10-04 (session 16). Project on `proxiprompt-mhacks`; client `client_034a2MZhz5kQgykZquPJIl` in git-ignored `apps/web/.env` as `VITE_SPACETIMEAUTH_CLIENT_ID`. Redirect URIs registered and verified: `http://localhost:5173/callback`, `http://127.0.0.1:5173/callback`, `https://unimpeded-fraying-imprudent.ngrok-free.dev/callback`. Magic link is the built-in method (social providers left disabled). The app opens on real sign-in with a "Use demo session" button. **Remaining (Paul):** one real magic-link sign-up end to end.
 **Code:** `apps/web/src/auth.tsx` already implements the OIDC path (SPEC §3); today it falls back to anonymous "dev auth" because the ID is unset. Work is verification: sign in on both tabs, confirm the identity persists across reloads and that `set_profile` onboarding still runs once.
 **Watch out:** existing anonymous identities become different users after switching; use the dev wipe or re-onboard.
 
 ### 3c. Host on MainCloud
 
-**Status:** done 2026-10-04. Live DB `proxiprompt-mhacks` (test DB `proxiprompt-mhacks-test`, guardrails 72/72 there). Service role claimed by our worker; token in `spacetimedb/.local/worker-token-proxiprompt-mhacks` (keep it). Use `STDB_TARGET=maincloud pnpm dev`. Remaining: one full team demo run on MainCloud.
+**Status:** done 2026-10-04. Live DB `proxiprompt-mhacks` (test DB `proxiprompt-mhacks-test`, guardrails 72/72 there). Service role claimed by our worker; token in `spacetimedb/.local/worker-token-proxiprompt-mhacks` (keep it). Use `STDB_TARGET=maincloud pnpm dev`. Rehearsed end to end on `proxiprompt-mhacks-test` (session 16, W7). Remaining: one full team demo run on `proxiprompt-mhacks`.
 
 ---
 
@@ -170,3 +170,23 @@ All merged and verified on `main` (details in PROGRESS "Session 15 orchestration
 - Reciprocal priority (SPEC §7): requesters who answered neighbors in the last 24 h are planned first and get a first wave of `FIRST_WAVE + credit` (credit capped at 5), with a private "Priority boost" timeline line. Off switch: `RECIPROCAL_PRIORITY=0`.
 
 What remains is human-gated: sections 3b, 3c, 5 and 6.
+
+---
+
+## 9. Session 16 (done 2026-10-04)
+
+Merged and verified on `main` (details in PROGRESS "Session 16 orchestration log"): SpacetimeAuth sign-in with "Use demo session"; `pnpm demo:neighbors` simulated residents for solo demos; ASI:One chat polish; richer `/asi/query` poll; no dashes in visible copy; MainCloud rehearsal (`services/orchestrator/scripts/rehearse.ts`); contradiction-aware confidence; readable sources view; posts default place; single watch card; submission kit (`DEMO.md`, `DEVPOST.md`, READMEs). Tests: browser e2e 7/7, core 138, orchestrator 83, agent 186, guardrails 72.
+
+## 10. What is next
+
+Human-only (Paul):
+1. Register Agentverse handle `proxipromptagent`.
+2. Public ASI:One chat share link of an answered question; paste into `DEVPOST.md` (`TODO_ASI_ONE_CHAT_LINK`).
+3. Demo video (`TODO_VIDEO_URL`), Devpost submission.
+4. One real magic-link sign-up; iPhone push test (Add to Home Screen from the ngrok URL).
+5. Team rehearsal of `DEMO.md` on MainCloud (`STDB_TARGET=maincloud pnpm dev`).
+
+Agent-doable if time allows (none are blocking):
+1. Robust service-role bootstrap: gate `claim_service_role` to the module owner recorded in an `init` reducer (today first-claimer-wins, mitigated by `dev.sh` refusing unclaimed MainCloud DBs).
+2. A conflicted answer currently waits for the deadline (a severe conflict is not "sufficient"); consider answering early with Low confidence when no more responders are available.
+3. Hosted deploy of web/orchestrator/agent (set `ORCH_BRIDGE_TOKEN` on both before `ORCH_HOST=0.0.0.0`).
