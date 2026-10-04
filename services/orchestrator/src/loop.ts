@@ -593,7 +593,7 @@ async function promptWave(
         q.id,
         "waiting",
         existing.length > 0
-          ? "No one else nearby to ask — waiting on the people already asked"
+          ? "No one else nearby to ask; waiting on the people already asked"
           : "No one nearby is available to ask right now",
       );
     }
@@ -786,7 +786,7 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
               recommendation: "insufficient",
               summary: "Nobody nearby answered in time, and cached reports were too old or missing.",
               supporting: [],
-              caveats: ["Try again shortly — a later answer will use any late responses."],
+              caveats: ["Try again shortly: a later answer will use any late responses."],
               planner: plan.planner,
               confidence: { score: score.score, level: score.level, ceiling: score.ceiling },
               factors: score.factors,
@@ -861,7 +861,7 @@ async function updateLateAnswers(conn: Conn, cfg: ReturnType<typeof getConfig>, 
     }
 
     answeredSignature.set(key, signature);
-    await event(conn, q.id, "updated", "A later answer came in — updating");
+    await event(conn, q.id, "updated", "A later answer came in, updating");
     await synthesizeQuery(conn, q.id, plan, place, obs, score, false, "update");
   }
 }
@@ -882,7 +882,7 @@ async function synthesizeQuery(
     await conn.reducers.workerSetQueryStatus({ queryId, status: "synthesizing" });
   }
   if (mode === "first") {
-    await event(conn, queryId, "enough", cacheHit ? "Reusing fresh evidence — no one interrupted" : "Enough evidence");
+    await event(conn, queryId, "enough", cacheHit ? "Reusing fresh evidence, no one interrupted" : "Enough evidence");
   }
   // Only evidence for THIS question's dimensions. `obs` is everything live at the place, so
   // without this an unrelated query's observations reach the answer — the symptom was a

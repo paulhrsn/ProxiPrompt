@@ -70,7 +70,7 @@ if [[ "$SKIP_PORT80" != "1" ]] && ! up "http://127.0.0.1:80/"; then
     echo "macOS needs your password once so ngrok http 80 can reach the app."
     sudo -v || SKIP_PORT80=1
   else
-    echo "No terminal for a sudo prompt — skipping the :80 forwarder. The :5173 URLs still work."
+    echo "No terminal for a sudo prompt, skipping the :80 forwarder. The :5173 URLs still work."
     SKIP_PORT80=1
   fi
 fi
@@ -128,7 +128,7 @@ fi
 
 cat <<'EOF'
 
-ProxiPrompt is up. One app, two people — open both of these (they do not share a login):
+ProxiPrompt is up. One app, two people, open both of these (they do not share a login):
 
   Asker      http://localhost:5173/
   Responder  http://127.0.0.1:5173/

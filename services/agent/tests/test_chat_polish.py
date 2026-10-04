@@ -188,3 +188,12 @@ async def test_progress_message_is_short_and_promises_follow_up():
         reply, pending = await bridge.run_orchestrated("Is Shapiro busy?", "s", "http://orc", total_s=0.05, interval_s=0.01, client=c)
     assert pending == "abc" and "Asking 2 people near Shapiro" in reply and len(reply.splitlines()) <= 2
     assert not any(d in reply for d in NO_DASH)
+
+
+def test_format_result_from_a_realistic_orchestrator_poll_payload():
+    payload = {"id": "asi-abc", "queryId": "7", "status": "answered", "progress": "Answer ready",
+               "headline": "Shapiro is moderately busy.", "confidence": "High",
+               "sources": "2 recent nearby reports", "recommendation": "go", "freshest_age_s": 240}
+    out = bridge.format_result(payload)
+    assert "Recommendation: go" in out
+    assert "Based on 2 recent nearby reports (newest 4 min ago)" in out
