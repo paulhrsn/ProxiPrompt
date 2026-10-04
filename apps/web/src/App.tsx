@@ -1130,6 +1130,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
           <span>Developer diagnostics</span>
           <input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); localStorage.setItem("pp.diag", e.target.checked ? "1" : "0"); }} />
         </label>
+        {import.meta.env.DEV ? <DevWipeButton onDone={setToast} /> : null}
         <button
           type="button"
           onClick={() => {
@@ -1143,6 +1144,43 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       </div>
       {toast ? <p className="toast" role="status">{toast}</p> : null}
     </section>
+  );
+}
+
+/**
+ * Dev builds only. Clears questions, prompts, answers, posts and reports for everyone;
+ * accounts, locations, push devices and places stay. Needs two taps.
+ */
+function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(timer);
+  }, [armed]);
+  return (
+    <button
+      type="button"
+      className={armed ? "danger" : undefined}
+      disabled={busy}
+      onClick={async () => {
+        if (!armed) return setArmed(true);
+        setArmed(false);
+        setBusy(true);
+        try {
+          // Relative: the Vite dev server proxies /dev to the orchestrator, on localhost and ngrok.
+          const res = await fetch("/dev/wipe", { method: "POST" });
+          onDone(res.ok ? "All activity wiped" : `Wipe failed (${res.status}). Is ENABLE_DEV_WIPE=1 set?`);
+        } catch (e) {
+          onDone(`Wipe failed: ${(e as Error).message}`);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? "Wiping…" : armed ? "Tap again to wipe all activity" : "Wipe activity (dev)"}
+    </button>
   );
 }
 

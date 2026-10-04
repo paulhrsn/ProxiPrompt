@@ -29,6 +29,7 @@ import WorkerAddQueryEventReducer from "../worker_add_query_event_reducer";
 import WorkerAttachQueryReducer from "../worker_attach_query_reducer";
 import WorkerCreateJobReducer from "../worker_create_job_reducer";
 import WorkerCreatePromptBatchReducer from "../worker_create_prompt_batch_reducer";
+import WorkerDevWipeReducer from "../worker_dev_wipe_reducer";
 import WorkerInvalidateObservationReducer from "../worker_invalidate_observation_reducer";
 import WorkerMarkNotifiedReducer from "../worker_mark_notified_reducer";
 import WorkerRecordImpactReducer from "../worker_record_impact_reducer";
@@ -63,6 +64,7 @@ export type WorkerAddQueryEventParams = __Infer<typeof WorkerAddQueryEventReduce
 export type WorkerAttachQueryParams = __Infer<typeof WorkerAttachQueryReducer>;
 export type WorkerCreateJobParams = __Infer<typeof WorkerCreateJobReducer>;
 export type WorkerCreatePromptBatchParams = __Infer<typeof WorkerCreatePromptBatchReducer>;
+export type WorkerDevWipeParams = __Infer<typeof WorkerDevWipeReducer>;
 export type WorkerInvalidateObservationParams = __Infer<typeof WorkerInvalidateObservationReducer>;
 export type WorkerMarkNotifiedParams = __Infer<typeof WorkerMarkNotifiedReducer>;
 export type WorkerRecordImpactParams = __Infer<typeof WorkerRecordImpactReducer>;

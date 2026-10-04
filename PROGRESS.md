@@ -60,6 +60,7 @@ Previously:
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
 ## Work log
+- 2026-10-04 session 9: **"Wipe activity (dev)" button** on the You tab (Vite dev builds only, two taps). Path: web `POST /dev/wipe` -> Vite proxy -> orchestrator (only when `ENABLE_DEV_WIPE=1`, set by `scripts/dev.sh`) -> service-only reducer `worker_dev_wipe`, which empties queries, events, jobs, batches, recipients, responses, observations, posts, comments, impact, reports and rate buckets. Keeps profiles, devices, locations, places and the service role; also resets the orchestrator's in-memory loop caches. Also: VAPID keys generated into git-ignored `services/orchestrator/.env` + `apps/web/.env` (push now enabled). Tests: guardrails 65, orchestrator 34.
 - 2026-10-03 session 8 (Paul: pings slow, Shiyuan never got one, coords ugly):
   1. **Test users took the real team's slots.** 61 throwaway `_mut` users from e2e/probe runs still had fresh (6h demo window) locations claimed at Duderstadt; 3 of the 5 recipients for query 33 were test users, so Shiyuan was never picked. Deleted their `user_location` rows from local `proxiprompt`; `scripts/e2e.ts` now refuses the live DB unless `STDB_DB=proxiprompt-test` (or `E2E_ALLOW_LIVE_DB=1`).
   2. **Waves too small and slow.** `FIRST_WAVE` 2 -> 10, `MAX_RECIPIENTS` / `MAX_RECIPIENTS_PER_JOB` 5 -> 20 (Paul's call). Guardrail cap check updated (63/63).

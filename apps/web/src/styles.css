@@ -377,6 +377,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 }
 .group button:last-child, .group .setting:last-child { border-bottom: 0; }
 .group button:hover, .group .setting:hover { background: var(--bg); }
+.group button.danger { color: var(--rose); background: var(--rose-wash); font-weight: 600; }
 
 .setting { font-weight: 500; }
 .timeline { list-style: none; padding: 0; margin: 8px 0 16px; }

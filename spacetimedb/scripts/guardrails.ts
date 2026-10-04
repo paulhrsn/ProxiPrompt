@@ -572,6 +572,22 @@ await check('comment rate limit: 30/h, 31st rejected', async () => {
 });
 
 // ============================================================================================
+// Last: it wipes this test database's activity, so every check above must already have run.
+console.log('\nDev wipe');
+await check('non-service identity cannot worker_dev_wipe', () => rejects(R(A).workerDevWipe({}), /Only the service/));
+await check('worker_dev_wipe clears activity, keeps accounts, locations and places', async () => {
+  const profilesBefore = rows(W, 'svcUserProfile').length;
+  const locsBefore = rows(W, 'svcUserLocation').length;
+  const activity = ['svcQuery', 'svcQueryEvent', 'svcEvidenceJob', 'svcPromptBatch', 'svcPromptRecipient', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcComment', 'svcImpactEvent', 'svcReport'];
+  if (activity.every((t) => rows(W, t).length === 0)) throw new Error('no activity to wipe; checks above should have created some');
+  await R(W).workerDevWipe({});
+  await eventually(() => activity.every((t) => rows(W, t).length === 0), 5000, 'activity wiped');
+  if (rows(W, 'svcUserProfile').length !== profilesBefore) throw new Error('profiles were wiped');
+  if (rows(W, 'svcUserLocation').length !== locsBefore) throw new Error('locations were wiped');
+  if (!rows(A, 'place').some((p) => p.id === slug)) throw new Error('places were wiped');
+  return `${activity.length} activity tables empty; ${profilesBefore} profiles and ${locsBefore} locations kept`;
+});
+
 for (const c of clients) c.close();
 console.log(`\n${passed} checks passed, ${failures.length} failed${claimedNow ? ' (service role claimed on this run)' : ''}`);
 if (failures.length) {

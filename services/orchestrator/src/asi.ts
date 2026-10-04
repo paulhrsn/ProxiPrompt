@@ -31,7 +31,11 @@ function json(res: ServerResponse, code: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-export function startAsiServer(getConn: () => DbConnection | null, port: number) {
+export function startAsiServer(
+  getConn: () => DbConnection | null,
+  port: number,
+  hooks: { onDevWipe?: () => void } = {},
+) {
   const server = createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
@@ -126,6 +130,20 @@ export function startAsiServer(getConn: () => DbConnection | null, port: number)
           }
         }
         json(res, 200, rec);
+        return;
+      }
+      // Dev only: the web app's "Wipe activity" button. Opt-in so a deployed orchestrator
+      // never exposes it; POST so a link or prefetch cannot trigger it.
+      if (req.method === "POST" && url.pathname === "/dev/wipe" && process.env.ENABLE_DEV_WIPE === "1") {
+        const conn = getConn();
+        if (!conn) {
+          json(res, 503, { error: "orchestrator is not connected to SpacetimeDB" });
+          return;
+        }
+        await conn.reducers.workerDevWipe({});
+        hooks.onDevWipe?.();
+        records.clear();
+        json(res, 200, { ok: true });
         return;
       }
       if (req.method === "GET" && url.pathname === "/catalog") {

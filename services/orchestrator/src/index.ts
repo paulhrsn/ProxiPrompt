@@ -5,7 +5,7 @@ import { CATALOG_PLACES } from "@proxiprompt/core";
 import { DbConnection } from "../../../spacetimedb/bindings/index.js";
 import { agentHealth } from "./agent.js";
 import { startAsiServer } from "./asi.js";
-import { tick } from "./loop.js";
+import { resetLoopState, tick } from "./loop.js";
 import { initPush } from "./push.js";
 
 const URI = process.env.SPACETIMEDB_URI ?? "ws://127.0.0.1:3000";
@@ -144,7 +144,7 @@ async function attach(c: DbConnection) {
 
 async function main() {
   initPush();
-  startAsiServer(() => conn, PORT);
+  startAsiServer(() => conn, PORT, { onDevWipe: resetLoopState });
   const healthy = await agentHealth();
   console.log(`agent ${process.env.AGENT_URL ?? "http://127.0.0.1:8001"} ${healthy ? "up" : "DOWN"}`);
   const c = await connect();

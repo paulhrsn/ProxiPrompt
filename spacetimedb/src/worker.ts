@@ -413,3 +413,20 @@ export const worker_set_admin = spacetimedb.reducer(
     ctx.db.user_profile.identity.update({ ...p, is_admin });
   }
 );
+
+// ---------- dev ----------
+// Clears all activity so a dev/demo session can start over. Accounts, devices, locations,
+// places and the service role stay, so nobody has to sign up, enable push or set a location
+// again. Service-only; the orchestrator exposes it only when ENABLE_DEV_WIPE=1.
+export const worker_dev_wipe = spacetimedb.reducer({}, (ctx) => {
+  requireService(ctx);
+  const byId = [
+    ctx.db.query_event, ctx.db.prompt_response, ctx.db.prompt_recipient, ctx.db.prompt_batch,
+    ctx.db.observation, ctx.db.impact_event, ctx.db.report, ctx.db.comment, ctx.db.post,
+    ctx.db.query, ctx.db.evidence_job,
+  ] as any[];
+  for (const table of byId) {
+    for (const id of [...table.iter()].map((r: any) => r.id)) table.id.delete(id);
+  }
+  for (const key of [...ctx.db.rate_bucket.iter()].map((r) => r.key)) ctx.db.rate_bucket.key.delete(key);
+});
