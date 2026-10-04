@@ -159,3 +159,15 @@ Follow-up: if the answer is not ready after 45s, the chat says it will send the 
 - The free ngrok tier serves its warning page to cookie-less browser requests (fixed for the manifest; any new fetch without credentials through ngrok can hit it).
 - `services/orchestrator/.env` must contain only the VAPID lines; copying `.env.example` wholesale turns Bluesky on and sets an empty token.
 - The dev "Wipe activity" button only works from `localhost`/`127.0.0.1` on the laptop, by design (security review 2026-10-04).
+
+---
+
+## 8. Session 15 (done 2026-10-04)
+
+All merged and verified on `main` (details in PROGRESS "Session 15 orchestration log"):
+- Browser e2e isolation: every spec wipes activity first (`e2e/fixtures.ts`); `pnpm e2e:browser` 4/4 twice.
+- `/asi/query` bridge token: set the same `ORCH_BRIDGE_TOKEN` on orchestrator and agent before any public bind; a public `ORCH_HOST` without it returns 503 on those routes.
+- PROGRESS Known issues refreshed.
+- Reciprocal priority (SPEC §7): requesters who answered neighbors in the last 24 h are planned first and get a first wave of `FIRST_WAVE + credit` (credit capped at 5), with a private "Priority boost" timeline line. Off switch: `RECIPROCAL_PRIORITY=0`.
+
+What remains is human-gated: sections 3b, 3c, 5 and 6.
