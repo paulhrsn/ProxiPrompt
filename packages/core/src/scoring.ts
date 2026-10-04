@@ -53,6 +53,11 @@ export interface DimensionScore {
 export interface ObservationFactor {
   id: string;
   dimension: string;
+  valueLabel: string;
+  sourceType: SourceType;
+  verifiedNearby: boolean;
+  /** Seconds since observed, for the sources view. */
+  ageS: number;
   freshness: number;
   sourceWeight: number;
   reliability: number;
@@ -190,6 +195,10 @@ function weighDimension(
       factor: {
         id: obs.id,
         dimension: obs.dimension,
+        valueLabel: obs.valueLabel,
+        sourceType: obs.sourceType,
+        verifiedNearby: obs.verifiedNearby,
+        ageS: Math.max(0, Math.round((nowMs - obs.observedAtMs) / 1000)),
         freshness: fresh,
         sourceWeight: sourceWeight(obs.sourceType, obs.verifiedNearby),
         reliability,

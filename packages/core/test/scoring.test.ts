@@ -388,3 +388,14 @@ describe("conflicting firsthand reports", () => {
     expect(r.conflicts[0]?.severity).toBe("moderate");
   });
 });
+
+describe("observation factors carry what a sources view needs", () => {
+  it("exposes label, source type, verification and age", () => {
+    const r = scoreEvidence({
+      observations: [obs({ id: "a", valueLabel: "Quiet", sourceType: "post", verifiedNearby: false, observedAtMs: NOW - 120_000, expiresAtMs: NOW + TTL_MS })],
+      required: REQ_NOISE,
+      nowMs: NOW,
+    });
+    expect(r.factors.observations[0]).toMatchObject({ valueLabel: "Quiet", sourceType: "post", verifiedNearby: false, ageS: 120 });
+  });
+});
