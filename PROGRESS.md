@@ -8,14 +8,14 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
-**As of 2026-10-04 ~08:05 (session 16): demo-ready on local and MainCloud.** Real SpacetimeAuth sign-in with a "Use demo session" button; simulated neighbors for solo demos (`pnpm demo:neighbors`); polished ASI:One chat; MainCloud path rehearsed end to end; submission kit written (`DEMO.md`, `DEVPOST.md`, READMEs). W10 (confidence on conflicting reports, readable sources view, posts default place, watch duplicate, "still true" state) in progress at handoff; check the session 16 log for its result.
+**As of 2026-10-04 ~08:05 (session 16): demo-ready on local and MainCloud.** Real SpacetimeAuth sign-in with a "Use demo session" button; simulated neighbors for solo demos (`pnpm demo:neighbors`); polished ASI:One chat; MainCloud path rehearsed end to end; submission kit written (`DEMO.md`, `DEVPOST.md`, READMEs). W10 also landed: confidence drops when reports disagree, readable sources view, posts default place, single watch card, fading "still true".
 
 How to demo now (see `DEMO.md`):
 - Team demo, cloud DB: `STDB_TARGET=maincloud pnpm dev`, open `http://localhost:5173` (asker) and `http://127.0.0.1:5173` (responder), sign in or "Use demo session".
 - Solo demo: add `pnpm demo:neighbors --uri wss://maincloud.spacetimedb.com --db proxiprompt-mhacks --count 8` in a second terminal.
 - Local only: `pnpm dev` (local DB was re-created this session; everyone re-onboards locally).
 
-Tests on main: browser e2e 5/5, core 131, orchestrator 81, agent 186, guardrails 72 (MainCloud test DB). Live Agentverse agent restarted on current code (mailbox on).
+Tests on main: browser e2e 7/7, core 138, orchestrator 83, agent 186, guardrails 72 (MainCloud test DB). Live Agentverse agent restarted on current code (mailbox on).
 
 Still needs Paul (human-only): register Agentverse handle `proxipromptagent`; record a public ASI:One chat share link of an answered question and paste it into `DEVPOST.md` (`TODO_ASI_ONE_CHAT_LINK`); demo video (`TODO_VIDEO_URL`); Devpost submission; iPhone push test; try one real magic-link sign-up.
 
@@ -103,6 +103,8 @@ Events:
 - **Verification on main after all session-16 merges:** `pnpm e2e:browser` 5/5 (42.4 s) with SpacetimeAuth configured; core 131, orchestrator 81, agent 186, web typecheck clean.
 - Published current module to local `proxiprompt` and MainCloud `proxiprompt-mhacks` (non-destructive update; carries W8's caveat string). Restarted the live Agentverse agent on :8001 with current code (W6 chat polish, W8 detail, recommendation wording): `llm_configured` and `mailbox` true. Merged lanes removed.
 - W10 dispatched (`fix/judge-polish-2`): the five W1 leftovers.
+- W10 merged (`a0ccfad`, `9043496`, `dd734d0`, `f2d623c`): (1) contradiction-aware confidence in `packages/core` scoring (spread 2 -> Medium cap, 3+ -> Low; "Reports disagree" caveat; `conflicts` in answer JSON; SPEC §8 updated) plus a real bug: a late conflicting update tried illegal `answered -> insufficient` and left a stale answer, now stays `answered`; (2) "Details" raw JSON replaced by "Where this comes from" + "Why X confidence"; (3) post composer defaults to the claimed/demo place; (4) watch card shows its first check, companion question hidden from Recent; (5) "Marked still true." fades after 3 s. New specs `e2e/conflict.spec.ts`, `e2e/posts.spec.ts`.
+- **Final verification on main (session 16):** `pnpm e2e:browser` 7/7 (1.5 min), core 138, orchestrator 83, agent 186, web typecheck clean, 0 dashes in W10's diff.
 
 ## Work log addendum: MainCloud (2026-10-04, session 15, after Paul's `spacetime login`)
 - Published to MainCloud: live DB **`proxiprompt-mhacks`** (dashboard https://spacetimedb.com/proxiprompt-mhacks) and test DB `proxiprompt-mhacks-test`. New names, not `proxiprompt`, because worker tokens are stored per DB name in `spacetimedb/.local/worker-token-<db>`; reusing the local name would mix local and cloud tokens.

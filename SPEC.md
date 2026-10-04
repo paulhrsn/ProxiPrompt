@@ -155,6 +155,8 @@ Contradiction: a newer observation on the same dimension with a value ≥2 ordin
 
 Users see High/Medium/Low + "N recent nearby reports · updated Xs ago". Numeric score and factor breakdown are exposed only in the diagnostics drawer (P1 UI; P0 stores the factors).
 
+Contradictions (session 16): fresh firsthand reports on one dimension that disagree cap confidence. An ordinal spread of 2 caps at Medium, 3 or more caps at Low; without ordinals, two or more differing values each carrying at least 20% of the weight count as a moderate conflict. The answer adds a "Reports disagree on ..." caveat and a `conflicts` field. A severe conflict is not sufficient, so collection continues until the deadline.
+
 ## 9. Agent contract (JSON over HTTP; mirrored by zod in `packages/core` and pydantic in `services/agent`)
 
 `POST /plan` → `{ canonical_intent, intent_key, decision, dimensions:[{key,label,kind,volatility,proposed_ttl_s}], needs_clarification, clarification:{question,options[]}|null, survey:{question, controls:[{dimension_key,label,options:[{value,label,ordinal}]}] (1–3), allow_note:true}, responder_radius_m, responder_count, refusal:{reason}|null, planner:"llm"|"heuristic" }`
