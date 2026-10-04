@@ -82,6 +82,10 @@ def _freshness_text(data: dict[str, Any]) -> str | None:
     return f if isinstance(f, str) and f else None
 
 
+# The orchestrator sends the synthesis enum; chat shows it as a plain sentence.
+_REC_TEXT = {"go": "Worth going now.", "maybe": "Maybe, check the details first.", "avoid": "Probably skip it for now."}
+
+
 def format_result(data: dict[str, Any]) -> str:
     status = str(data.get("status", "")).lower()
     if status == "refused":
@@ -96,7 +100,7 @@ def format_result(data: dict[str, Any]) -> str:
     lines = [str(headline or "No answer yet.")]
     rec = data.get("recommendation")
     if isinstance(rec, str) and rec:
-        lines.append(f"Recommendation: {rec}")
+        lines.append(f"Recommendation: {_REC_TEXT.get(rec, rec)}")
     conf = _confidence_text(data)
     if conf:
         lines.append(f"Confidence: {conf}")

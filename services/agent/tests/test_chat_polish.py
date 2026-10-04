@@ -195,5 +195,5 @@ def test_format_result_from_a_realistic_orchestrator_poll_payload():
                "headline": "Shapiro is moderately busy.", "confidence": "High",
                "sources": "2 recent nearby reports", "recommendation": "go", "freshest_age_s": 240}
     out = bridge.format_result(payload)
-    assert "Recommendation: go" in out
+    assert "Recommendation: Worth going now." in out
     assert "Based on 2 recent nearby reports (newest 4 min ago)" in out
