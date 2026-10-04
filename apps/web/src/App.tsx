@@ -34,8 +34,8 @@ const LAST_QUERY = "pp.lastQuery";
  * A prompt is only worth showing while it can still be answered. submit_response rejects
  * an expired batch, so a card left up past `expiresAt` can only fail on Send.
  */
-function isAnswerable(p: { responded: boolean; expiresAt: { microsSinceUnixEpoch: bigint } }): boolean {
-  return !p.responded && toMs(p.expiresAt) > Date.now();
+function isAnswerable(p: { responded: boolean; expired?: boolean; expiresAt: { microsSinceUnixEpoch: bigint } }): boolean {
+  return !p.responded && !p.expired && toMs(p.expiresAt) > Date.now();
 }
 const OPEN_QUERY = new Set(["planning", "clarifying", "collecting", "synthesizing"]);
 

@@ -19,4 +19,5 @@ export default __t.row({
   createdAt: __t.timestamp().name("created_at"),
   expiresAt: __t.timestamp().name("expires_at"),
   svc: __t.u8(),
+  expired: __t.bool(),
 });

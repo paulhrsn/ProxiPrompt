@@ -58,9 +58,11 @@ import WorkerAddObservationReducer from "./worker_add_observation_reducer";
 import WorkerAddQueryEventReducer from "./worker_add_query_event_reducer";
 import WorkerArmWatchReducer from "./worker_arm_watch_reducer";
 import WorkerAttachQueryReducer from "./worker_attach_query_reducer";
+import WorkerCollectGarbageReducer from "./worker_collect_garbage_reducer";
 import WorkerCreateJobReducer from "./worker_create_job_reducer";
 import WorkerCreatePromptBatchReducer from "./worker_create_prompt_batch_reducer";
 import WorkerDevWipeReducer from "./worker_dev_wipe_reducer";
+import WorkerEnsureGcReducer from "./worker_ensure_gc_reducer";
 import WorkerInvalidateObservationReducer from "./worker_invalidate_observation_reducer";
 import WorkerMarkNotifiedReducer from "./worker_mark_notified_reducer";
 import WorkerNoteWatchReducer from "./worker_note_watch_reducer";
@@ -341,9 +343,11 @@ const reducersSchema = __reducers(
   __reducerSchema("worker_add_query_event", WorkerAddQueryEventReducer),
   __reducerSchema("worker_arm_watch", WorkerArmWatchReducer),
   __reducerSchema("worker_attach_query", WorkerAttachQueryReducer),
+  __reducerSchema("worker_collect_garbage", WorkerCollectGarbageReducer),
   __reducerSchema("worker_create_job", WorkerCreateJobReducer),
   __reducerSchema("worker_create_prompt_batch", WorkerCreatePromptBatchReducer),
   __reducerSchema("worker_dev_wipe", WorkerDevWipeReducer),
+  __reducerSchema("worker_ensure_gc", WorkerEnsureGcReducer),
   __reducerSchema("worker_invalidate_observation", WorkerInvalidateObservationReducer),
   __reducerSchema("worker_mark_notified", WorkerMarkNotifiedReducer),
   __reducerSchema("worker_note_watch", WorkerNoteWatchReducer),

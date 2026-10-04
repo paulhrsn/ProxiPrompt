@@ -75,6 +75,7 @@ const PromptForMe = t.row('PromptForMe', {
   expires_at: t.timestamp(),
   notified_at: t.timestamp().optional(),
   responded: t.bool(),
+  expired: t.bool(),
 });
 
 // Prompts addressed to the caller. Deliberately omits job id, requester, other recipients and any query data.
@@ -97,6 +98,7 @@ export const my_prompts = spacetimedb.view({ name: 'my_prompts', public: true },
       expires_at: b.expires_at,
       notified_at: r.notified_at ?? undefined,
       responded: r.responded,
+      expired: b.expired,
     });
   }
   return out;

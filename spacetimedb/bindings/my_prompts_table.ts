@@ -23,4 +23,5 @@ export default __t.row({
   expiresAt: __t.timestamp().name("expires_at"),
   notifiedAt: __t.option(__t.timestamp()).name("notified_at"),
   responded: __t.bool(),
+  expired: __t.bool(),
 });

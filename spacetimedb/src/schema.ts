@@ -148,6 +148,18 @@ export const prompt_batch = table(
     created_at: t.timestamp(),
     expires_at: t.timestamp(),
     svc: t.u8().index('btree'),
+    // Set by prompt_expired when expires_at is reached, so a prompt is closed
+    // even if nobody tries to answer and the worker is down.
+    expired: t.bool().default(false),
+  }
+);
+
+export const prompt_expiry_schedule = table(
+  { name: 'prompt_expiry_schedule' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+    batch_id: t.u64().index('btree'),
   }
 );
 
@@ -275,6 +287,15 @@ export const rate_bucket = table(
   }
 );
 
+// One repeating row. gc_due deletes observations past the late-accept window and rate buckets older than 2 hours.
+export const gc_schedule = table(
+  { name: 'gc_schedule' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+  }
+);
+
 // A standing "tell me when..." request. The worker fills target_json after planning.
 // The database expires it; the worker only notices new evidence.
 export const watch = table(
@@ -324,6 +345,7 @@ const spacetimedb = schema({
   evidence_job,
   job_deadline_schedule,
   prompt_batch,
+  prompt_expiry_schedule,
   prompt_recipient,
   prompt_response,
   observation,
@@ -332,6 +354,7 @@ const spacetimedb = schema({
   impact_event,
   report,
   rate_bucket,
+  gc_schedule,
   watch,
   watch_expiry_schedule,
   service_role,

@@ -105,6 +105,11 @@ function connect(): Promise<DbConnection> {
         } catch (e) {
           console.log("claim_service_role:", (e as Error).message);
         }
+        try {
+          await c.reducers.workerEnsureGc({});
+        } catch (e) {
+          console.log("worker_ensure_gc:", (e as Error).message);
+        }
         resolve(c);
       })
       .onConnectError((_ctx, err) => {

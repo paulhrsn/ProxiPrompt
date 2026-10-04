@@ -250,6 +250,8 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
     ['workerArmWatch', { watchId: 1n, dimensionKeysJson: '["noise_level"]', targetJson: '{}' }],
     ['workerNoteWatch', { watchId: 1n, lastValue: 'Quiet' }],
     ['workerRetireWatch', { watchId: 1n, reason: 'not watchable' }],
+    ['workerEnsureGc', {}],
+    ['workerCollectGarbage', {}],
   ];
   for (const [name, args] of calls) {
     const m = await rejects(R(D)[name](args), /Only the service/);
@@ -446,6 +448,24 @@ await check('response after prompt expiry rejected', async () => {
   await sleep(2000);
   return rejects(R(R6).submitResponse({ batchId: b2, answersJson: '{"noise_level":"quiet"}', note: '' }), /expired/);
 });
+await check('the database marks a prompt expired on its own clock', async () => {
+  const key = `expiry-mark-${run}-job`;
+  await R(W).workerCreateJob({
+    clientKey: key, placeId: slug, intentKey: 'x', dimensionKeysJson: '["noise_level"]', planJson: '{}',
+    deadlineAtMicros: nowMicros() + 120_000_000n,
+  });
+  const jobId = (await eventually(() => rows(W, 'svcEvidenceJob').find((x) => x.clientKey === key), 3000, 'expiry job')).id;
+  await R(W).workerCreatePromptBatch({
+    jobId, question: 'Will this card close itself?', controlsJson: CONTROLS,
+    expiresAtMicros: nowMicros() + 2_000_000n, recipientIdentitiesJson: JSON.stringify([R6.hex]),
+  });
+  await eventually(
+    () => rows(W, 'svcPromptBatch').find((x) => x.jobId === jobId && x.expired === true),
+    12_000,
+    'prompt expired',
+  );
+  return 'expired without an orchestrator';
+});
 
 // ============================================================================================
 console.log('\nObservations, impact, answer, job lifecycle');
@@ -638,6 +658,53 @@ await check('deadline fires with no orchestrator when a job has no evidence', as
   const jobRow = rows(W, 'svcEvidenceJob').find((x) => x.id === j.id);
   if (jobRow?.status !== 'expired') throw new Error(`job status ${jobRow?.status}`);
   return 'insufficient with no worker polling';
+});
+
+// ============================================================================================
+console.log('\nCleanup');
+await check('a client cannot call the scheduled cleanup reducers', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const runCall = promisify(execFile);
+  for (const name of ['prompt_expired', 'gc_due']) {
+    try {
+      await runCall('spacetime', ['call', '--server', 'local', DB, name, '--anonymous', '-y'], { timeout: 20_000 });
+      throw new Error(`${name} was client-callable`);
+    } catch (e) {
+      const msg = `${errMessage(e)}\n${(e as { stderr?: string }).stderr ?? ''}`;
+      if (!/No such procedure|Private|404/i.test(msg)) throw new Error(msg.trim());
+    }
+  }
+  return 'private reducers, client calls rejected';
+});
+await check('garbage collection keeps fresh evidence and drops what is past the late-accept window', async () => {
+  const now = nowMicros();
+  const obs = (sourceId: string, observedAtMicros: bigint, expiresAtMicros: bigint) => ({
+    placeId: slug, dimension: 'noise_level', value: 'quiet', valueLabel: 'Quiet', ordinal: 1, kind: 'objective',
+    sourceType: 'response', sourceId, contributor: B.identity, verifiedNearby: true, observedAtMicros, expiresAtMicros,
+  });
+  await R(W).workerAddObservation(obs(`gc-old-${run}`, now - 800_000_000n, now - 700_000_000n));
+  await R(W).workerAddObservation(obs(`gc-recent-${run}`, now - 30_000_000n, now - 10_000_000n));
+  await R(W).workerAddObservation(obs(`gc-fresh-${run}`, now, now + 900_000_000n));
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const runCall = promisify(execFile);
+  const staleKey = `aabbcc:queries:1`;
+  const sql = async (query: string) => {
+    const out = await runCall('spacetime', ['sql', '--server', 'local', '--format', 'json', '--yes', DB, query], { timeout: 20_000, encoding: 'utf8' });
+    return typeof out === 'string' ? out : String((out as { stdout?: string }).stdout ?? '');
+  };
+  await sql(`INSERT INTO rate_bucket (key, count) VALUES ('${staleKey}', 1)`);
+  await R(W).workerCollectGarbage({});
+  await eventually(() => {
+    const ids = rows(W, 'svcObservation').map((o) => o.sourceId);
+    return ids.includes(`gc-fresh-${run}`) && ids.includes(`gc-recent-${run}`) && !ids.includes(`gc-old-${run}`);
+  }, 5000, 'observation gc');
+  const listed = await sql(`SELECT key FROM rate_bucket WHERE key = '${staleKey}'`);
+  const jsonStart = listed.indexOf('[');
+  const parsed = JSON.parse(jsonStart >= 0 ? listed.slice(jsonStart) : listed) as Array<{ rows: unknown[] }>;
+  if ((parsed[0]?.rows.length ?? 1) !== 0) throw new Error(`stale rate bucket survived: ${listed.slice(0, 300)}`);
+  return 'old observation and rate bucket removed; a report that expired 10s ago stayed';
 });
 
 // ============================================================================================

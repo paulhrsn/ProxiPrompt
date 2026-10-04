@@ -53,6 +53,12 @@ export const EvidenceJob = __t.object("EvidenceJob", {
 });
 export type EvidenceJob = __Infer<typeof EvidenceJob>;
 
+export const GcSchedule = __t.object("GcSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type GcSchedule = __Infer<typeof GcSchedule>;
+
 export const ImpactEvent = __t.object("ImpactEvent", {
   id: __t.u64(),
   contributor: __t.identity(),
@@ -172,8 +178,16 @@ export const PromptBatch = __t.object("PromptBatch", {
   createdAt: __t.timestamp(),
   expiresAt: __t.timestamp(),
   svc: __t.u8(),
+  expired: __t.bool(),
 });
 export type PromptBatch = __Infer<typeof PromptBatch>;
+
+export const PromptExpirySchedule = __t.object("PromptExpirySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  batchId: __t.u64(),
+});
+export type PromptExpirySchedule = __Infer<typeof PromptExpirySchedule>;
 
 export const PromptForMe = __t.object("PromptForMe", {
   batchId: __t.u64(),
@@ -188,6 +202,7 @@ export const PromptForMe = __t.object("PromptForMe", {
   expiresAt: __t.timestamp(),
   notifiedAt: __t.option(__t.timestamp()),
   responded: __t.bool(),
+  expired: __t.bool(),
 });
 export type PromptForMe = __Infer<typeof PromptForMe>;
 

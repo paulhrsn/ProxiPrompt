@@ -8,7 +8,7 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
-**As of 2026-10-04 ~02:45 local: browser demo, scheduled deadlines, and watches are verified.** A watch now reports open seats even when the question's survey and the watch's survey use different option ids. Still human-only: SpacetimeAuth client ID, `spacetime login` for MainCloud, Agentverse handle, public chat link, demo video, Devpost, and iPhone push. Optional and not built: prompt-expiry and rate-bucket cleanup schedules.
+**As of 2026-10-04 ~02:50 local: browser demo, scheduled deadlines, watches, prompt expiry, and garbage collection are verified.** A watch reports open seats even when the two plans use different option ids. Still human-only: SpacetimeAuth client ID, `spacetime login` for MainCloud, Agentverse handle, public chat link, demo video, Devpost, and iPhone push.
 
 State at handoff:
 - Local stack: SpacetimeDB on :3000, agent on :8001, Vite on :5173. The live orchestrator was down at the start of this session and was started again on :8080 after publishing `proxiprompt` (no data wipe). Restart everything with `pnpm dev` if in doubt.
@@ -69,6 +69,7 @@ State at handoff:
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
 ## Work log
+- 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
 - 2026-10-04 session 13: **Re-verified the uncommitted session-12 work and fixed two watch bugs.** Guardrails 69/69 on `proxiprompt-test` (deadline fires with no orchestrator; a watch expires on the database clock; only the service can retire a watch). `pnpm e2e:browser` canonical demo passed. The watch spec failed: the watch was armed with option id `many_open` while the answers were stored as `many_seats` / "Many open seats", so it never said "Seats opened up". `watchReading` now treats a favorable label as a match. Re-ran `pnpm e2e:browser e2e/watch.spec.ts`: passed. A question that is not about open seats or quiet is ended with a reason instead of staying on "Setting up". Published to local `proxiprompt` without deleting data. Tests: core 125, orchestrator 44, agent 145.
 - 2026-10-04 session 12: **Browser e2e of SPEC §14, twice, on `proxiprompt-test`.** `pnpm e2e:browser` starts an orchestrator on :8081 and Vite on :5174 (never the live DB). Four Chromium contexts: asker, two demo-located at Shapiro, one at Michigan Union, then a second asker. Nearby prompts, far does not, High + 2 reports, second ask shows "Reusing fresh evidence". Two fixes the run found: the LLM plan for "quiet study" omitted seats, so the follow-up had nothing to reuse (`merge_detected_dimensions`, and a neighbour presence control now drops a subjective slot before an objective one); the reuse line lived only on the timeline, which unmounts when the answer arrives, so the answer screen now shows it when `cacheHit` is set. Job deadlines are a SpacetimeDB schedule (`job_deadline_reached`, private reducer). With no fresh evidence the database writes insufficient on its own (guardrails 67, no orchestrator). With evidence it sets `deadline_passed` and the worker synthesizes. ASI:One chat that is still working after 45s keeps polling and sends the answer as a follow-up (agent tests 145). **Watch a place:** "Notify me when" asks once and keeps a `watch` for up to 3 hours. `watch_expired` is scheduled in the database (guardrails: expires with no orchestrator; only the owner can cancel). The worker notifies when a firsthand report matches, matching survey labels rather than a fixed ordinal, and does not repeat the same value. Browser check `e2e/watch.spec.ts` passed. Guardrails 68.
 - 2026-10-04 session 11: **Agentverse live.** Agent has a permanent `AGENT_SEED` and `AGENT_MAILBOX=1` (both in git-ignored `services/agent/.env`); address `agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs`, mailbox connected via the inspector, publicly searchable on Agentverse (status active, AgentChatProtocol). Verified from ASI:One chat: messages became queries #37/#38. Handle `@proxiprompt` is taken by the team's ASI:One personal AI (unrelated persona); agent handle is `proxipromptagent` but not yet registered. Fixed: ASI:One's leading "@agent1q…" mention was saved into the question text; `bridge.handle_chat_text` now strips leading mentions. Agent tests 143.
@@ -147,7 +148,7 @@ pnpm --filter @proxiprompt/core test          # 125 passed
 pnpm --filter @proxiprompt/orchestrator test  # 44 passed
 cd services/agent && uv run pytest -q         # 145 passed
 pnpm --filter @proxiprompt/spacetimedb guardrails
-  69 checks passed, 0 failed
+  72 checks passed, 0 failed
 pnpm e2e:browser
   canonical demo passed (42.7s)
 pnpm e2e:browser e2e/watch.spec.ts
@@ -238,15 +239,14 @@ Full specs are in `NEXT_STEPS.md`.
 ### Fetch.ai ASI:One Agent Challenge: requirements met, deliverables outstanding
 Rules (fetch.ai/events/m-hacks): agent registered on Agentverse, Chat Protocol, discoverable/usable through ASI:One, primary workflow completes without a custom frontend, ASI:One as reasoning engine, public repo. All met and verified. Outstanding: handle, shared chat URL, video.
 
-### Best Use of SpacetimeDB: strong core, three visible gaps
+### Best Use of SpacetimeDB: strong core, two visible gaps
 Already strong (say this in the pitch):
-- SpacetimeDB is the single authoritative state: 17 tables, 34 reducers (18 client, 16 worker), 23 views.
+- SpacetimeDB is the single authoritative state: tables, reducers, and views, with the safety rules in the reducers.
 - All safety rules live in reducers, not the app: query/job state machine, one response per recipient, recipient cap (20), requester exclusion, location freshness, cooldowns, rate limits (incl. 60/h service relay), blocklist, admin hide, service-role authorization, dev wipe.
 - Privacy by views: exact coordinates and responses are private tables; the public reads only views (`svc_*` for the worker, `my_*` per user, public Pulse/place views). Guardrails check that other users and the public cannot read private rows.
 - Real-time everywhere: the PWA timeline, prompt pop-up and Pulse are live subscriptions; the orchestrator is itself a subscriber reacting to row changes.
-- 69 automated guardrail checks against a live published module (`pnpm --filter @proxiprompt/spacetimedb guardrails`).
+- Clocks live in the database. A job deadline, a prompt expiry, and a 10-minute cleanup of old observations and rate buckets all run with no worker doing the work. 72 guardrail checks cover this (`pnpm --filter @proxiprompt/spacetimedb guardrails`).
 Gaps, in order of judge impact:
-1. **Job deadlines are scheduled.** `job_deadline_schedule` calls `job_deadline_reached` (private; clients cannot invoke it). No fresh evidence: the database writes insufficient and expires the job with no worker running (guardrails). Fresh evidence: `deadline_passed` and the worker synthesizes. Prompt expiry and rate-bucket cleanup are still worker-side.
-2. **Auth is anonymous "dev auth".** `VITE_SPACETIMEAUTH_CLIENT_ID` unset, so SpacetimeAuth magic-link login is not in use. Needs a SpacetimeAuth project (human) then a short wiring check.
-3. **Runs on local `spacetime start`, not MainCloud.** `spacetime login` + publish to MainCloud (human login) makes it a real hosted demo.
+1. **Auth is anonymous "dev auth".** `VITE_SPACETIMEAUTH_CLIENT_ID` unset, so SpacetimeAuth magic-link login is not in use. Needs a SpacetimeAuth project (human) then a short wiring check.
+2. **Runs on local `spacetime start`, not MainCloud.** `spacetime login` + publish to MainCloud (human login) makes it a real hosted demo.
 

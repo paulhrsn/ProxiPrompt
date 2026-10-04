@@ -79,7 +79,7 @@ Current strengths and the full gap list are in PROGRESS "Sponsor tracks". These 
 
 ### 3a. Scheduled reducers: let the database run the clock
 
-**Status:** done 2026-10-04 for job deadlines. Prompt-expiry and rate-bucket GC schedules are still optional. **Needs Paul:** nothing.
+**Status:** done 2026-10-04. Job deadlines, prompt expiry, and garbage collection all run on the database clock. **Needs Paul:** nothing.
 
 **Problem today:** every time-based rule is enforced by the orchestrator polling every 2 s:
 - Job deadline: `loop.ts:656` computes `pastDeadline = now >= job.deadlineAt`, then (`loop.ts:696-721`) writes an `insufficient` answer when there is no evidence, or synthesizes, then sets the job `expired`.

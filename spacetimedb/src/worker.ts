@@ -1,16 +1,18 @@
 // Worker-only reducers: sender must be in `service_role`. These hold the authoritative guardrails the
 // orchestrator cannot bypass (state machine, recipient caps, location freshness, requester exclusion).
 import { ScheduleAt, t } from 'spacetimedb/server';
-import spacetimedb, { job_deadline_schedule, watch_expiry_schedule } from './schema';
+import spacetimedb, { gc_schedule, job_deadline_schedule, prompt_expiry_schedule, watch_expiry_schedule } from './schema';
 import {
   JOB_TRANSITIONS,
   LOCATION_MAX_AGE_S,
   MAX_RECIPIENTS_PER_JOB,
+  MICROS_PER_HOUR,
   MICROS_PER_S,
   addEvent,
   checkRaw,
   checkString,
   fail,
+  type Ctx,
   getQuery,
   identityFromHex,
   isPlainObject,
@@ -323,7 +325,13 @@ export const worker_create_prompt_batch = spacetimedb.reducer(
       controls_json: JSON.stringify(controls),
       created_at: ctx.timestamp,
       expires_at: ts(a.expires_at_micros),
+      expired: false,
       svc: 0,
+    });
+    ctx.db.prompt_expiry_schedule.insert({
+      scheduled_id: 0n,
+      scheduled_at: ScheduleAt.time(a.expires_at_micros),
+      batch_id: batch.id,
     });
     for (const id of incoming) {
       ctx.db.prompt_recipient.insert({
@@ -337,6 +345,17 @@ export const worker_create_prompt_batch = spacetimedb.reducer(
       });
     }
     ctx.db.evidence_job.id.update({ ...job, recipients_count: existing.length + incoming.length });
+  }
+);
+
+export const prompt_expired = spacetimedb.reducer(
+  { onSchedule: prompt_expiry_schedule },
+  { schedule: prompt_expiry_schedule.rowType },
+  (ctx, { schedule }) => {
+    if (!ctx.sender.isEqual(ctx.identity)) fail('Only the scheduler can expire a prompt');
+    const batch = ctx.db.prompt_batch.id.find(schedule.batch_id);
+    if (!batch || batch.expired) return;
+    ctx.db.prompt_batch.id.update({ ...batch, expired: true });
   }
 );
 
@@ -541,6 +560,66 @@ export const worker_retire_watch = spacetimedb.reducer(
   }
 );
 
+// Normal LATE_ACCEPT_S. Demo's shorter window sits inside this, and the database
+// does not know which mode the worker is in, so cleanup waits out the longer one.
+const GC_KEEP_AFTER_EXPIRY_S = 600n;
+const GC_INTERVAL_S = 600n;
+const RATE_BUCKET_KEEP_HOURS = 2n;
+
+function rateWindow(key: string): bigint | null {
+  const cut = key.lastIndexOf(':');
+  if (cut < 0) return null;
+  try {
+    return BigInt(key.slice(cut + 1));
+  } catch {
+    return null;
+  }
+}
+
+function ensureGcSchedule(ctx: Ctx): void {
+  for (const _row of ctx.db.gc_schedule.iter()) return;
+  ctx.db.gc_schedule.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(GC_INTERVAL_S * MICROS_PER_S),
+  });
+}
+
+function collectGarbage(ctx: Ctx): void {
+  const now = ctx.timestamp.microsSinceUnixEpoch;
+  const cutoff = now - GC_KEEP_AFTER_EXPIRY_S * MICROS_PER_S;
+  for (const o of [...ctx.db.observation.iter()]) {
+    if (o.expires_at.microsSinceUnixEpoch < cutoff) ctx.db.observation.id.delete(o.id);
+  }
+  const hour = now / MICROS_PER_HOUR;
+  for (const row of [...ctx.db.rate_bucket.iter()]) {
+    const window = rateWindow(row.key);
+    if (window !== null && hour - window >= RATE_BUCKET_KEEP_HOURS) ctx.db.rate_bucket.key.delete(row.key);
+  }
+}
+
+export const init = spacetimedb.init((ctx) => {
+  ensureGcSchedule(ctx);
+});
+
+export const worker_ensure_gc = spacetimedb.reducer({}, (ctx) => {
+  requireService(ctx);
+  ensureGcSchedule(ctx);
+});
+
+export const gc_due = spacetimedb.reducer(
+  { onSchedule: gc_schedule },
+  { schedule: gc_schedule.rowType },
+  (ctx, _args) => {
+    if (!ctx.sender.isEqual(ctx.identity)) fail('Only the scheduler can collect garbage');
+    collectGarbage(ctx);
+  }
+);
+
+export const worker_collect_garbage = spacetimedb.reducer({}, (ctx) => {
+  requireService(ctx);
+  collectGarbage(ctx);
+});
+
 // ---------- dev ----------
 // Clears all activity so a dev/demo session can start over. Accounts, devices, locations,
 // places and the service role stay, so nobody has to sign up, enable push or set a location
@@ -556,6 +635,7 @@ export const worker_dev_wipe = spacetimedb.reducer({}, (ctx) => {
     for (const id of [...table.iter()].map((r: any) => r.id)) table.id.delete(id);
   }
   for (const row of [...ctx.db.job_deadline_schedule.iter()]) ctx.db.job_deadline_schedule.scheduled_id.delete(row.scheduled_id);
+  for (const row of [...ctx.db.prompt_expiry_schedule.iter()]) ctx.db.prompt_expiry_schedule.scheduled_id.delete(row.scheduled_id);
   for (const row of [...ctx.db.watch_expiry_schedule.iter()]) ctx.db.watch_expiry_schedule.scheduled_id.delete(row.scheduled_id);
   for (const key of [...ctx.db.rate_bucket.iter()].map((r) => r.key)) ctx.db.rate_bucket.key.delete(key);
 });
