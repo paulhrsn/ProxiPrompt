@@ -136,7 +136,7 @@ If the orchestrator is down, deadlines silently stop happening and queries hang 
 **Status:** technical requirements met and verified 2026-10-04 (agent `agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs`, mailbox, AgentChatProtocol, publicly searchable, ASI:One chat created real queries #37/#38).
 
 Remaining (mostly Paul):
-1. Register the handle `proxipromptagent` on the Agentverse profile (`@proxiprompt` is taken by the team's ASI:One personal AI, an unrelated chatbot persona; do not delete it).
+1. ~~Register the handle `proxipromptagent` on the Agentverse profile~~ done 2026-10-04 (`@proxiprompt` is taken by the team's ASI:One personal AI, an unrelated chatbot persona; do not delete it).
 2. Produce a public ASI:One shared chat URL showing a fully answered workflow: have a teammate's tab demo-located at the place, ask from ASI:One, answer in the tab within the 30 s demo window.
 3. Demo video, Devpost entry with the Agentverse profile URL: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile
 

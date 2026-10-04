@@ -16,6 +16,10 @@ Placeholders to fill before submitting:
 
 Ask about a place. Nearby people answer. You get a recommendation with confidence and provenance.
 
+## Elevator pitch
+
+Can't read the room? Ask it. Real-time insights from the people actually there. The community is the API.
+
 ## Inspiration
 
 A map can tell you a library exists. It cannot tell you if there is a quiet seat right now, if the dining hall line is long, or if a treadmill is free. The only sensors that know are the people standing there. Group chats and social feeds are slow, noisy, and interrupt everyone. We wanted a way to ask the fewest useful people, only when no fresh answer already exists, and to be honest about how sure we are.
@@ -117,7 +121,7 @@ ProxiPrompt is real-time local decision intelligence: it knows what it does not 
 | Public ASI:One chat share link | `TODO_ASI_ONE_CHAT_LINK` |
 | Demo video | `TODO_VIDEO_URL` |
 
-Handle note: the intended handle is `proxipromptagent`; its public registration on the Agentverse profile is still pending (see `PROGRESS.md`).
+Agent handle: `@proxipromptagent` (shown on the Agentverse profile).
 
 ## Track: Best Use of SpacetimeDB
 

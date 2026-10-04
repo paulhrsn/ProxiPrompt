@@ -20,7 +20,7 @@ How to demo now (see `DEMO.md`):
 
 Tests on main: browser e2e 7/7, core 138, orchestrator 83, agent 186, guardrails 72 (MainCloud test DB). Live Agentverse agent restarted on current code (mailbox on).
 
-Still needs Paul (human-only): register Agentverse handle `proxipromptagent`; record a public ASI:One chat share link of an answered question and paste it into `DEVPOST.md` (`TODO_ASI_ONE_CHAT_LINK`); demo video (`TODO_VIDEO_URL`); Devpost submission; iPhone push test; try one real magic-link sign-up.
+Still needs Paul (human-only): record a public ASI:One chat share link of an answered question and paste it into `DEVPOST.md` (`TODO_ASI_ONE_CHAT_LINK`); demo video (`TODO_VIDEO_URL`); Devpost submission; iPhone push test; try one real magic-link sign-up.
 
 ## Status by plan to-do
 | to-do | status | notes |
@@ -66,7 +66,7 @@ Still needs Paul (human-only): register Agentverse handle `proxipromptagent`; re
 - ~~SpacetimeAuth project + client ID~~ done session 16 (`client_034a2MZhz5kQgykZquPJIl`). Still human: one real magic-link sign-up.
 - Google Cloud billing + Maps key (optional).
 - ~~VAPID keys~~ done. Still human: install PWA on iPhones (iOS ≥16.4) from the HTTPS ngrok URL via Share > Add to Home Screen, open from the icon, You tab > Enable notifications.
-- ~~ASI:One API key, Agentverse mailbox~~ done 2026-10-04. Still human: register the handle `proxipromptagent` on the Agentverse profile (not yet shown publicly), make a public ASI:One shared chat link of a fully answered workflow, record the demo video. `@proxiprompt` belongs to the team's ASI:One personal AI (an unrelated chatbot persona created at ASI:One sign-up; do not delete it, its link to the account/API key is unverified).
+- ~~ASI:One API key, Agentverse mailbox~~ done 2026-10-04. Handle `@proxipromptagent` registered and shown on the profile. Still human: make a public ASI:One shared chat link of a fully answered workflow, record the demo video. `@proxiprompt` belongs to the team's ASI:One personal AI (an unrelated chatbot persona created at ASI:One sign-up; do not delete it, its link to the account/API key is unverified).
 - Agentverse profile: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile
 - ~~`spacetime login` + MainCloud publish~~ done 2026-10-04 (`proxiprompt-mhacks`). Vercel + Railway deploys still open.
 - Fetch.ai ASI Submission Agent + Devpost.
@@ -412,3 +412,6 @@ Live MainCloud module was updated non-destructively; profile identities and quer
 - Added spacing between immediate recent-post context, post metadata, and body.
 - Added COMMANDS.md covering local startup, ngrok port 80, stop/restart, optional MainCloud, and phone setup.
 - Web production build and web/orchestrator TypeScript checks passed. No automated tests or physical-device rehearsal performed for this follow-up. Restart pnpm dev and refresh devices to activate worker changes.
+- Added "ASI:One chat" section to COMMANDS.md: open asi1.ai, address the agent by its agent1q... address, Agentverse profile as backup, three demo messages and timing.
+- Agentverse handle `@proxipromptagent` confirmed on the public profile (2026-10-04). COMMANDS.md now uses the handle (address as fallback); DEVPOST.md handle note updated.
+- Docs sweep before submission: elevator pitch added to DEVPOST.md; stale "handle not registered" notes cleared in PROGRESS.md, NEXT_STEPS.md and services/agent/README.md (`AGENT_HANDLE=proxipromptagent`). Still open: `TODO_ASI_ONE_CHAT_LINK` and `TODO_VIDEO_URL` in DEVPOST.md.

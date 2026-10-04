@@ -88,7 +88,7 @@ curl -s -X POST localhost:8001/plan -H 'content-type: application/json' -d '{
 ## Register on Agentverse (mailbox) and make it discoverable in ASI:One
 
 1. Create an ASI:One API key at <https://asi1.ai/dashboard/api-keys> and put it in `ASI_ONE_API_KEY`.
-2. Pick a long random `AGENT_SEED` and keep it stable. Set `AGENT_MAILBOX=1` and (optionally) `AGENT_HANDLE=proxiprompt`.
+2. Pick a long random `AGENT_SEED` and keep it stable. Set `AGENT_MAILBOX=1` and (optionally) `AGENT_HANDLE=proxipromptagent`.
 3. Start the agent. The log prints `Agent inspector available at https://agentverse.ai/inspect/?uri=...&address=agent1...`. Open that link.
 4. Click **Connect → Mailbox → Finish**. Sign in to Agentverse if asked. The agent now shows under *Local Agents* with a mailbox.
 5. In Agentverse, open the agent profile and verify the README (this file) and the keywords are shown. Add the keywords above if missing, and set the handle `@proxipromptagent` (`@proxiprompt` is taken by the team's ASI:One personal AI).
