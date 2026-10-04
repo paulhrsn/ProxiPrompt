@@ -133,6 +133,12 @@ await check('update_location validates ranges and source', async () => {
   await rejects(R(A).updateLocation({ lat: NaN, lng: 0, accuracyM: 1, source: 'gps' }), /finite/);
   return m1;
 });
+await check('update_location rejects a claimed building that is not a known place', async () => {
+  return await rejects(
+    R(A).updateLocation({ lat: 42.2753, lng: -83.7378, accuracyM: 12, source: 'gps', claimedPlaceId: 'no-such-building' }),
+    /Unknown place/,
+  );
+});
 await check('upsert_place inserts; re-upsert by non-privileged user cannot move it', async () => {
   const args = { id: slug, name: 'Guardrail Library', category: 'library', lat: 42.2753, lng: -83.7378, address: '1 Test St', community: 'umich-annarbor' };
   await R(A).upsertPlace(args);

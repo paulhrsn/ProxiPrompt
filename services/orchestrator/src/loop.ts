@@ -3,6 +3,9 @@ import {
   freshnessNote,
   getConfig,
   getDimension,
+  hasAmbiguousNeighbor,
+  haversineM,
+  nearestCatalogPlace,
   scoreEvidence,
   nextWaveCount,
   placePart,
@@ -28,6 +31,24 @@ const jobHandledPasses = new Map<string, Set<string>>();
 const handledReactions = new Set<string>();
 const lastEmptyWaveAt = new Map<string, number>();
 const lastImpactPush = new Map<string, number>();
+/** Last "Received k of N" message per query, so a 2s tick cannot repeat it. */
+const lastReceivedEvent = new Map<string, string>();
+/** Evidence signature behind each finished answer, so late updates fire once per change. */
+const answeredSignature = new Map<string, string>();
+
+/** Clears all in-memory tick state. Tests call this between cases. */
+export function resetLoopState(): void {
+  processedQueries.clear();
+  processedResponses.clear();
+  processedPosts.clear();
+  jobLastWaveAt.clear();
+  jobHandledPasses.clear();
+  handledReactions.clear();
+  lastEmptyWaveAt.clear();
+  lastImpactPush.clear();
+  lastReceivedEvent.clear();
+  answeredSignature.clear();
+}
 
 function rows<T>(iter: Iterable<T> | undefined): T[] {
   return iter ? [...iter] : [];
@@ -61,15 +82,49 @@ async function event(conn: Conn, queryId: bigint, kind: string, message: string)
   await conn.reducers.workerAddQueryEvent({ queryId, kind, message });
 }
 
+/** SPEC §10: a post/comment is verified-nearby when its author's location is fresh and within 150 m. */
+const POST_VERIFY_RADIUS_M = 150;
+
+/** Scraped public posts (SPEC §13 P1) live here, never under a surveyed dimension. */
+const SOCIAL_DIMENSION = "other:social_mention";
+
+/** "Can you actually see this?" control. Its answers are never stored as evidence. */
+const PRESENCE_KEY = "other:place_part";
+/** worker_create_prompt_batch accepts 1-3 controls and rejects the batch otherwise. */
+const MAX_PROMPT_CONTROLS = 3;
+
+function isVerifiedNearby(
+  loc:
+    | {
+        lat: number;
+        lng: number;
+        claimedPlaceId?: string | undefined;
+        capturedAt: { microsSinceUnixEpoch: bigint };
+      }
+    | undefined,
+  place: { id: string; lat: number; lng: number },
+  cfg: ReturnType<typeof getConfig>,
+  now: number,
+): boolean {
+  if (!loc) return false;
+  if (now - toMs(loc.capturedAt) > cfg.LOCATION_MAX_AGE_S * 1000) return false;
+  // Someone who said they are in another building is not nearby this one, whatever the
+  // coordinates say; a claim on this place vouches for them even if GPS is off by 80 m.
+  if (loc.claimedPlaceId && loc.claimedPlaceId !== place.id) return false;
+  if (loc.claimedPlaceId === place.id) return true;
+  return haversineM(loc.lat, loc.lng, place.lat, place.lng) < POST_VERIFY_RADIUS_M;
+}
+
 export async function tick(conn: Conn): Promise<void> {
   const demo = ["1", "true", "yes", "on"].includes((process.env.DEMO_MODE ?? "1").toLowerCase());
   const cfg = getConfig(demo);
   const now = nowMs();
 
   await ingestResponses(conn, cfg, now);
-  await summarizePendingPosts(conn, now);
+  await summarizePendingPosts(conn, cfg, now);
   await processPlanningQueries(conn, cfg, now);
   await advanceCollectingJobs(conn, cfg, now);
+  await updateLateAnswers(conn, cfg, now);
 }
 
 async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
@@ -87,7 +142,7 @@ async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, no
       continue;
     }
     for (const [dim, value] of Object.entries(answers)) {
-      if (dim === "other:place_part" || value === "not_here") continue;
+      if (dim === PRESENCE_KEY || value === "not_here") continue;
       const control = controls.find((c) => c.dimension_key === dim);
       const opt = control?.options.find((o) => o.value === value);
       const dimDef = getDimension(dim);
@@ -127,8 +182,9 @@ function passResponseIds(conn: Conn, jobId: bigint): string[] {
 async function applyPostReactions(
   conn: Conn,
   post: { id: bigint; placeId: string },
-  place: { lat: number; lng: number },
+  place: { id: string; lat: number; lng: number },
   claims: { dimension: string; value_label: string; kind: string; proposed_ttl_s: number; ordinal: number | null }[],
+  cfg: ReturnType<typeof getConfig>,
   now: number,
 ) {
   const comments = rows(conn.db.svcComment.iter()).filter((c) => c.postId === post.id && !c.deleted && !c.hidden);
@@ -147,10 +203,7 @@ async function applyPostReactions(
       }
     } else {
       const loc = rows(conn.db.svcUserLocation.iter()).find((l) => l.identity.isEqual(c.author));
-      const verified =
-        !!loc &&
-        now - toMs(loc.capturedAt) < 1_800_000 &&
-        Math.hypot((loc.lat - place.lat) * 111_000, (loc.lng - place.lng) * 85_000) < 150;
+      const verified = isVerifiedNearby(loc, place, cfg, now);
       for (const claim of claims) {
         const ttl = claim.proposed_ttl_s || 900;
         await conn.reducers.workerAddObservation({
@@ -173,7 +226,7 @@ async function applyPostReactions(
   }
 }
 
-async function summarizePendingPosts(conn: Conn, now: number) {
+async function summarizePendingPosts(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
   for (const p of rows(conn.db.svcPost.iter())) {
     if (p.deleted || p.hidden) continue;
     const key = `${p.id}:${p.commentCount}:${p.text}`;
@@ -210,10 +263,7 @@ async function summarizePendingPosts(conn: Conn, now: number) {
         freshnessNote: note.note,
       });
       const loc = rows(conn.db.svcUserLocation.iter()).find((l) => l.identity.isEqual(p.author));
-      const verified =
-        !!loc &&
-        now - toMs(loc.capturedAt) < 1800_000 &&
-        Math.hypot((loc.lat - place.lat) * 111_000, (loc.lng - place.lng) * 85_000) < 150;
+      const verified = isVerifiedNearby(loc, place, cfg, now);
       for (const claim of sum.claims) {
         await conn.reducers.workerAddObservation({
           placeId: p.placeId,
@@ -230,7 +280,7 @@ async function summarizePendingPosts(conn: Conn, now: number) {
           expiresAtMicros: toMicros(toMs(p.createdAt) + claim.proposed_ttl_s * 1000),
         });
       }
-      await applyPostReactions(conn, p, place, sum.claims, now);
+      await applyPostReactions(conn, p, place, sum.claims, cfg, now);
       processedPosts.add(key);
     } catch (e) {
       console.warn("summarize post failed", p.id, (e as Error).message);
@@ -296,7 +346,10 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
         await conn.reducers.workerAttachQuery({ queryId: q.id, jobId });
         await event(conn, q.id, "collecting", "Joining an in-progress check for this place");
       } else {
-        const clientKey = `job-${q.id}-${Date.now().toString(36)}`;
+        // Stable per query: worker_create_job dedupes on client_key, so a retry after a
+        // crash or a mid-sequence throw is a no-op instead of a second job at this place.
+        // The reducer requires at least 8 characters, so single-digit ids need the prefix.
+        const clientKey = `job-query-${q.id}`;
         await conn.reducers.workerCreateJob({
           clientKey,
           placeId: q.placeId,
@@ -319,7 +372,12 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
         sufficientScore: cfg.SUFFICIENT_SCORE,
       });
       const freshCount = obs.filter((o) => now - o.observedAtMs < 15 * 60_000).length;
-      await event(conn, q.id, "checking", freshCount ? `Found ${freshCount} recent updates` : "Checking recent updates");
+      await event(
+        conn,
+        q.id,
+        "checking",
+        freshCount ? `Found ${freshCount} recent update${freshCount === 1 ? "" : "s"}` : "Checking recent updates",
+      );
 
       if (score.sufficient) {
         await synthesizeQuery(conn, q.id, plan, place, obs, score, true);
@@ -355,7 +413,10 @@ async function maybeImportBluesky(
     if (!dim) continue;
     await conn.reducers.workerAddObservation({
       placeId: place.id,
-      dimension: dim.key,
+      // Its own dimension on purpose. Filed under a surveyed dimension, every post would
+      // share the junk value "social" and so dominate that dimension's modal value and
+      // agreement. Scoring also excludes social from sufficiency and the contributor count.
+      dimension: SOCIAL_DIMENSION,
       value: "social",
       valueLabel: p.text.slice(0, 80),
       ordinal: undefined,
@@ -369,6 +430,19 @@ async function maybeImportBluesky(
     });
   }
   void now;
+}
+
+/**
+ * Distance from this fix to the nearest catalog building that is NOT the target. Compared
+ * against the distance to the target (and the fix's accuracy) this is what separates
+ * "inside Duderstadt" from "inside Pierpont" 78 m away. Undefined when the catalog offers
+ * no alternative, which selectResponders reads as no evidence either way.
+ */
+function nearestOtherBuildingM(
+  loc: { lat: number; lng: number },
+  place: { id: string },
+): number | undefined {
+  return nearestCatalogPlace(loc.lat, loc.lng, place.id)?.distanceM;
 }
 
 async function promptWave(
@@ -397,7 +471,10 @@ async function promptWave(
     if (t > prev) lastPrompt.set(hexOf(r.responder), t);
   }
   const attached = rows(conn.db.svcQuery.iter()).filter((q) => q.evidenceJobId === jobId);
-  const requesterId = attached[0] ? hexOf(attached[0].requester) : "";
+  // Every attached requester, not just the first. worker_create_prompt_batch rejects the
+  // whole batch if any recipient is a requester on this job, so missing one here makes the
+  // entire wave roll back silently.
+  const requesterIds = attached.map((q) => hexOf(q.requester));
 
   const candidates = rows(conn.db.svcUserLocation.iter()).map((loc) => {
     const profile = rows(conn.db.svcUserProfile.iter()).find((p) => p.identity.isEqual(loc.identity));
@@ -411,6 +488,9 @@ async function promptWave(
       hasActiveDevice: deviceOwners.has(hexOf(loc.identity)) || now - toMs(loc.capturedAt) < 120_000,
       notificationsPaused: profile?.notificationsPaused ?? false,
       lastPromptedAtMs: lastPrompt.get(hexOf(loc.identity)) ?? null,
+      accuracyM: loc.accuracyM,
+      nearestOtherBuildingM: nearestOtherBuildingM(loc, place),
+      claimedPlaceId: loc.claimedPlaceId ?? null,
     };
   });
 
@@ -422,7 +502,7 @@ async function promptWave(
     radiusM: plan.responder_radius_m,
     count: want,
     excludeIds: existing.map((r) => hexOf(r.responder)),
-    requesterId,
+    requesterIds,
   });
   if (picked.selected.length === 0) {
     const key = String(jobId);
@@ -431,7 +511,16 @@ async function promptWave(
     if (now - last < 30_000) return;
     lastEmptyWaveAt.set(key, now);
     for (const q of attached) {
-      await event(conn, q.id, "waiting", "No one nearby is available to ask right now");
+      // After a first wave has gone out, "no one nearby" reads as a contradiction of the
+      // "Asking N people" line above it. The honest difference is nobody NEW.
+      await event(
+        conn,
+        q.id,
+        "waiting",
+        existing.length > 0
+          ? "No one else nearby to ask — waiting on the people already asked"
+          : "No one nearby is available to ask right now",
+      );
     }
     return;
   }
@@ -439,21 +528,37 @@ async function promptWave(
 
   const survey = plan.survey;
   if (!survey) return;
-  const question = (attached.map((q) => q.text.trim()).find(Boolean) || survey.question).slice(0, 300);
+  // The plan's survey question, never a requester's raw text: one job can serve several
+  // queries, and SPEC §3 forbids prompts that identify or quote the requester.
+  const question = survey.question.slice(0, 300);
+
+  // A floor or area named in the question, else a plain "are you here?" when a neighbouring
+  // catalog building is close enough that GPS cannot tell them apart. Without this, someone
+  // in Pierpont has no way to decline a question about Duderstadt 78 m away, and their
+  // answer is recorded as if they were inside the target place.
   const part = placePart(question);
-  const controls = part
+  const presence = part
+    ? { label: part.prompt, passLabel: part.passLabel }
+    : hasAmbiguousNeighbor(place)
+      // The card already names the place above, so repeating it here just reads badly.
+      ? { label: "Are you there right now?", passLabel: `I'm not at ${place.name}` }
+      : null;
+  const dimensionControls = survey.controls.filter((c) => c.dimension_key !== PRESENCE_KEY);
+  // The reducer accepts 1-3 controls and rejects the whole batch otherwise, so the presence
+  // control costs one dimension slot rather than silently failing the wave.
+  const controls = presence
     ? [
         {
-          dimension_key: "other:place_part",
-          label: part.prompt,
+          dimension_key: PRESENCE_KEY,
+          label: presence.label,
           options: [
             { value: "here", label: "I can check", ordinal: 1 },
-            { value: "not_here", label: part.passLabel, ordinal: 0 },
+            { value: "not_here", label: presence.passLabel, ordinal: 0 },
           ],
         },
-        ...survey.controls.filter((c) => c.dimension_key !== "other:place_part"),
+        ...dimensionControls.slice(0, MAX_PROMPT_CONTROLS - 1),
       ]
-    : survey.controls;
+    : dimensionControls.slice(0, MAX_PROMPT_CONTROLS);
   await conn.reducers.workerCreatePromptBatch({
     jobId,
     question,
@@ -474,8 +579,8 @@ async function promptWave(
         { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
         {
           title: `Quick question about ${place.name}`,
-          body: (attached.map((q) => q.text.trim()).find(Boolean) || survey.question).slice(0, 140),
-          url: `/respond/${batch?.id ?? ""}`,
+          body: survey.question.slice(0, 140),
+          url: `/#/respond/${batch?.id ?? ""}`,
           tag: `prompt-${batch?.id}`,
         },
       );
@@ -486,12 +591,22 @@ async function promptWave(
     await conn.reducers.workerMarkNotified({ recipientId: r.id });
   }
   for (const q of attached) {
+    const n = picked.selected.length;
+    const who = `${n} ${n === 1 ? "person" : "people"}`;
     const asking = wave === "expand"
-      ? `No answer yet. Asking ${picked.selected.length} more people near ${place.name}`
-      : `Asking ${picked.selected.length} people near ${place.name}`;
+      ? `No answer yet. Asking ${n} more near ${place.name}`
+      : `Asking ${who} near ${place.name}`;
     await event(conn, q.id, "asking", asking);
-    if (q.status === "planning") {
-      await conn.reducers.workerSetQueryStatus({ queryId: q.id, status: "collecting" });
+    // `attached` was read before the batch was created, and the caller may already have
+    // moved this query to collecting. Re-read, and tolerate losing the race: the reducer
+    // rejects collecting -> collecting, which would otherwise fail the whole query.
+    const live = rows(conn.db.svcQuery.iter()).find((row) => row.id === q.id);
+    if (live?.status === "planning") {
+      try {
+        await conn.reducers.workerSetQueryStatus({ queryId: q.id, status: "collecting" });
+      } catch (e) {
+        console.warn("status nudge skipped for", String(q.id), (e as Error).message);
+      }
     }
   }
 }
@@ -503,7 +618,21 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
     if (!plan) continue;
     const place = placeOf(conn, job.placeId);
     if (!place) continue;
-    const attached = rows(conn.db.svcQuery.iter()).filter((q) => q.evidenceJobId === job.id && ["collecting", "planning", "synthesizing"].includes(q.status));
+    const onJob = rows(conn.db.svcQuery.iter()).filter((q) => q.evidenceJobId === job.id);
+    const attached = onJob.filter((q) => ["collecting", "planning", "synthesizing"].includes(q.status));
+    // Nobody is waiting on this job any more — every query was cancelled or already closed.
+    // Continuing would interrupt people for a question that no longer exists (SPEC §1:
+    // interrupt the fewest people). The age guard avoids killing a job whose attach has
+    // not yet arrived through the subscription.
+    if (attached.length === 0 && now - toMs(job.createdAt) > cfg.EXPAND_AFTER_S * 1000) {
+      await conn.reducers.workerSetJobStatus({
+        jobId: job.id,
+        status: "expired",
+        confidenceJson: "",
+      });
+      continue;
+    }
+    if (attached.length === 0) continue;
     const obs = scoringObs(conn, job.placeId, now);
     const score = scoreEvidence({
       observations: obs,
@@ -514,7 +643,14 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
     const recips = rows(conn.db.svcPromptRecipient.iter()).filter((r) => r.jobId === job.id);
     const answered = recips.filter((r) => r.responded).length;
     for (const q of attached) {
-      if (answered) await event(conn, q.id, "received", `Received ${answered} of ${recips.length || plan.responder_count}`);
+      if (!answered) continue;
+      // recips.length is how many people were actually asked; plan.responder_count is only
+      // what the plan requested. Emit once per distinct message, not once per 2s tick.
+      const message = `Received ${answered} of ${recips.length}`;
+      const key = `${q.id}:received`;
+      if (lastReceivedEvent.get(key) === message) continue;
+      lastReceivedEvent.set(key, message);
+      await event(conn, q.id, "received", message);
     }
 
     const pastDeadline = now >= toMs(job.deadlineAt);
@@ -587,6 +723,67 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
   }
 }
 
+/**
+ * SPEC §7 step 9. A response can arrive after the job deadline — in demo mode the deadline
+ * is 30 s while prompts stay open for 600 s — and `ingestResponses` already turns it into
+ * an observation. Without this pass that evidence never reaches the person who asked: they
+ * are left on "not enough fresh evidence" while the answer sits in the database.
+ *
+ * Re-scores finished queries for `LATE_ACCEPT_S` after their job's deadline and rewrites
+ * the answer when the evidence has materially changed. Keyed on an evidence signature so
+ * each change produces exactly one update, not one per 2 s tick.
+ */
+async function updateLateAnswers(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
+  for (const q of rows(conn.db.svcQuery.iter())) {
+    if (q.status !== "answered" && q.status !== "insufficient") continue;
+    if (q.evidenceJobId === undefined || q.evidenceJobId === null) continue;
+    const job = rows(conn.db.svcEvidenceJob.iter()).find((j) => j.id === q.evidenceJobId);
+    if (!job) continue;
+    // The window runs from the deadline the job was given, not from when it closed.
+    if (now - toMs(job.deadlineAt) > cfg.LATE_ACCEPT_S * 1000) continue;
+    const plan = parseJson<PlanResponse | null>(job.planJson, null);
+    if (!plan) continue;
+    const place = placeOf(conn, q.placeId);
+    if (!place) continue;
+
+    const obs = scoringObs(conn, q.placeId, now);
+    const score = scoreEvidence({
+      observations: obs,
+      required: plan.dimensions.map((d) => ({ key: d.key, kind: d.kind })),
+      nowMs: now,
+      sufficientScore: cfg.SUFFICIENT_SCORE,
+    });
+    const signature = `${score.contributors}:${score.level}:${score.dimensions.map((d) => d.modalValue ?? "-").join(",")}`;
+    const key = String(q.id);
+    const previous = answeredSignature.get(key);
+    if (previous === undefined) {
+      // First sighting after a restart: record what the stored answer already reflects.
+      const stored = parseJson<{ confidence?: { level?: string }; sourceCount?: number }>(q.answerJson, {});
+      answeredSignature.set(
+        key,
+        `${stored.sourceCount ?? 0}:${stored.confidence?.level ?? "-"}:${score.dimensions.map((d) => d.modalValue ?? "-").join(",")}`,
+      );
+      if (answeredSignature.get(key) === signature) continue;
+    } else if (previous === signature) {
+      continue;
+    }
+
+    // Only an answer worth re-reading: new evidence that is usable, or a verdict that moved.
+    const stored = parseJson<{ confidence?: { level?: string }; sourceCount?: number }>(q.answerJson, {});
+    const gainedContributors = score.contributors > (stored.sourceCount ?? 0);
+    const levelMoved = !!stored.confidence?.level && stored.confidence.level !== score.level;
+    const nowAnswerable = q.status === "insufficient" && score.contributors > 0;
+    if (!gainedContributors && !levelMoved && !nowAnswerable) {
+      answeredSignature.set(key, signature);
+      continue;
+    }
+
+    answeredSignature.set(key, signature);
+    await event(conn, q.id, "updated", "A later answer came in — updating");
+    await synthesizeQuery(conn, q.id, plan, place, obs, score, false, "update");
+  }
+}
+
 async function synthesizeQuery(
   conn: Conn,
   queryId: bigint,
@@ -595,22 +792,28 @@ async function synthesizeQuery(
   obs: ScoringObservation[],
   score: ReturnType<typeof scoreEvidence>,
   cacheHit: boolean,
+  mode: "first" | "update" = "first",
 ) {
   const q = rows(conn.db.svcQuery.iter()).find((row) => row.id === queryId);
   if (!q) return;
-  if (q.status === "planning") {
-    await conn.reducers.workerSetQueryStatus({ queryId, status: "synthesizing" });
-  } else if (q.status === "collecting") {
+  if (q.status === "planning" || q.status === "collecting") {
     await conn.reducers.workerSetQueryStatus({ queryId, status: "synthesizing" });
   }
-  await event(conn, queryId, "enough", cacheHit ? "Reusing fresh evidence — no one interrupted" : "Enough evidence");
+  if (mode === "first") {
+    await event(conn, queryId, "enough", cacheHit ? "Reusing fresh evidence — no one interrupted" : "Enough evidence");
+  }
+  // Only evidence for THIS question's dimensions. `obs` is everything live at the place, so
+  // without this an unrelated query's observations reach the answer — the symptom was a
+  // headline reading "answer is Yes and Yes", one Yes per question.
+  const requiredKeys = new Set(plan.dimensions.map((d) => d.key));
+  const used = obs.filter((o) => requiredKeys.has(o.dimension));
   const synth = await callSynthesize({
     query_id: String(queryId),
     text: q.text,
     canonical_intent: plan.canonical_intent,
     place: { id: place.id, name: place.name, category: place.category, lat: place.lat, lng: place.lng },
     dimensions: plan.dimensions,
-    evidence: obs.map((o) => ({
+    evidence: used.map((o) => ({
       id: o.id,
       dimension: o.dimension,
       value_label: o.valueLabel,
@@ -623,9 +826,19 @@ async function synthesizeQuery(
     confidence: { score: score.score, level: score.level, ceiling: score.ceiling },
     missing_dimensions: score.missingDimensions,
   });
-  const status = synth.recommendation === "insufficient" || obs.length === 0 ? "insufficient" : "answered";
-  const sourceCount = new Set(obs.map((o) => o.contributorId)).size;
-  const newest = obs.reduce((m, o) => Math.max(m, o.observedAtMs), 0);
+  // `obs` is every live observation at the place, including ones on dimensions this question
+  // never asked about and anonymous social posts. score.contributors counts only firsthand
+  // sources on the required dimensions, so this is the honest test for "we have an answer"
+  // (SPEC §1.1: with no fresh evidence the result is explicitly insufficient).
+  const status =
+    synth.recommendation === "insufficient" || score.contributors === 0 ? "insufficient" : "answered";
+  // scoreEvidence already counts distinct firsthand contributors on the required dimensions
+  // and derives the confidence ceiling from that same number, so reuse it: a separate count
+  // over every observation at the place contradicts the confidence level shown next to it.
+  const sourceCount = score.contributors;
+  const newest = used
+    .filter((o) => o.sourceType !== "social")
+    .reduce((m, o) => Math.max(m, o.observedAtMs), 0);
   await conn.reducers.workerSetAnswer({
     queryId,
     status,
@@ -639,9 +852,14 @@ async function synthesizeQuery(
       dimensions: score.dimensions,
     }),
   });
-  await event(conn, queryId, "ready", status === "answered" ? "Answer ready" : "Not enough fresh evidence");
+  await event(
+    conn,
+    queryId,
+    "ready",
+    status !== "answered" ? "Not enough fresh evidence" : mode === "update" ? "Updated answer" : "Answer ready",
+  );
 
-  for (const o of obs) {
+  for (const o of used) {
     if (!o.contributorId || o.contributorId.startsWith("anon:")) continue;
     try {
       await conn.reducers.workerRecordImpact({
@@ -661,7 +879,7 @@ async function synthesizeQuery(
             {
               title: "Your update helped someone",
               body: `Your report about ${place.name} answered a question.`,
-              url: "/activity",
+              url: "/#/activity",
               tag: `impact-${queryId}`,
             },
           );
@@ -678,9 +896,9 @@ async function synthesizeQuery(
     await sendPush(
       { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
       {
-        title: synth.headline,
+        title: mode === "update" ? `Updated answer: ${synth.headline}` : synth.headline,
         body: `${score.level} confidence · ${sourceCount} source${sourceCount === 1 ? "" : "s"}`,
-        url: `/q/${queryId}`,
+        url: `/#/q/${queryId}`,
         tag: `answer-${queryId}`,
       },
     );

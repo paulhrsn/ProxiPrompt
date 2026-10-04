@@ -16,6 +16,7 @@ export default __t.row({
   lng: __t.f64(),
   accuracyM: __t.f64().name("accuracy_m"),
   source: __t.string(),
+  claimedPlaceId: __t.option(__t.string()).name("claimed_place_id"),
   capturedAt: __t.timestamp().name("captured_at"),
   svc: __t.u8(),
 });

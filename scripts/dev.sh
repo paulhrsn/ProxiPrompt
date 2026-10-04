@@ -13,9 +13,14 @@ export AGENT_PORT="${AGENT_PORT:-8001}"
 export SPACETIMEDB_URI="${SPACETIMEDB_URI:-ws://127.0.0.1:3000}"
 export SPACETIMEDB_DB="${SPACETIMEDB_DB:-proxiprompt}"
 export ORCH_PORT="${ORCH_PORT:-8080}"
+# The agent's Chat Protocol needs this to reach the live network. Without it the ASI:One
+# path silently answers with a plan instead of real evidence (services/agent bridge.py).
+export ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://127.0.0.1:${ORCH_PORT:-8080}}"
 
 pids=()
 started_spacetime=0
+# The :80 forwarder only matters for ngrok / phones. Set SKIP_PORT80=1 to skip the sudo prompt.
+SKIP_PORT80="${SKIP_PORT80:-0}"
 
 up() {
   local code
@@ -26,7 +31,9 @@ up() {
 cleanup() {
   echo
   echo "Stopping local demo…"
-  for pid in "${pids[@]}"; do
+  # `${pids[@]}` on an empty array is an unbound-variable error under `set -u`, which turned
+  # any early exit into a confusing second failure.
+  for pid in ${pids[@]+"${pids[@]}"}; do
     kill "$pid" 2>/dev/null || true
   done
   if [[ "$started_spacetime" == "1" ]]; then
@@ -36,9 +43,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if ! up "http://127.0.0.1:80/"; then
-  echo "macOS needs your password once so ngrok http 80 can reach the app."
-  sudo -v
+if [[ "$SKIP_PORT80" != "1" ]] && ! up "http://127.0.0.1:80/"; then
+  if sudo -n true 2>/dev/null; then
+    : # sudo already authenticated
+  elif [[ -t 0 ]]; then
+    echo "macOS needs your password once so ngrok http 80 can reach the app."
+    sudo -v || SKIP_PORT80=1
+  else
+    echo "No terminal for a sudo prompt — skipping the :80 forwarder. The :5173 URLs still work."
+    SKIP_PORT80=1
+  fi
 fi
 
 if ! up "http://127.0.0.1:3000/v1/identity"; then
@@ -74,7 +88,7 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
-if ! up "http://127.0.0.1:80/"; then
+if [[ "$SKIP_PORT80" != "1" ]] && ! up "http://127.0.0.1:80/"; then
   sudo node "$ROOT/scripts/forward80.mjs" &
   pids+=($!)
 fi

@@ -24,4 +24,5 @@ export default __t.row({
   freshnessNote: __t.string().name("freshness_note"),
   commentCount: __t.u32().name("comment_count"),
   claimsJson: __t.option(__t.string()).name("claims_json"),
+  verifiedNearby: __t.bool().name("verified_nearby"),
 });

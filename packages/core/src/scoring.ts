@@ -42,6 +42,12 @@ export interface DimensionScore {
   modalLabel: string | null;
   /** Usable (non-zero weight) observations. */
   count: number;
+  /**
+   * Support from firsthand observations only (everything except `social`).
+   * Sufficiency gates on this so scraped posts can inform an answer but never
+   * carry one on their own (SPEC §1.1: never answer without fresh evidence).
+   */
+  firsthandSupport: number;
 }
 
 export interface ObservationFactor {
@@ -63,7 +69,10 @@ export interface ScoreResult {
   sufficient: boolean;
   dimensions: DimensionScore[];
   missingDimensions: string[];
-  /** Distinct contributor ids among usable observations on required dimensions. */
+  /**
+   * Distinct contributor ids among usable FIRSTHAND observations on required
+   * dimensions (social excluded). This is the number shown as "N nearby reports".
+   */
   contributors: number;
   /** For the diagnostics drawer. */
   factors: {
@@ -128,17 +137,23 @@ export function levelFor(score: number): ConfidenceLevel {
   return "Low";
 }
 
-/** Sufficient when score ≥ threshold and every objective required dimension has support ≥ 0.5. */
+/**
+ * Sufficient when score ≥ threshold and every objective required dimension has
+ * firsthand support ≥ 0.5. Social evidence counts toward the score but not
+ * toward this gate, so a place with only scraped posts still prompts people.
+ */
 export function isSufficient(
   score: number,
-  dimensions: { key: string; support: number }[],
+  dimensions: { key: string; firsthandSupport: number }[],
   required: RequiredDimension[],
   sufficientScore = DEFAULT_SUFFICIENT_SCORE,
 ): boolean {
   if (score < sufficientScore) return false;
   return required
     .filter((r) => r.kind === "objective")
-    .every((r) => (dimensions.find((d) => d.key === r.key)?.support ?? 0) >= OBJECTIVE_SUPPORT_MIN);
+    .every(
+      (r) => (dimensions.find((d) => d.key === r.key)?.firsthandSupport ?? 0) >= OBJECTIVE_SUPPORT_MIN,
+    );
 }
 
 interface Weighted {
@@ -194,10 +209,15 @@ function weighDimension(
 function scoreDimension(key: string, items: Weighted[]): DimensionScore {
   const usable = items.filter((i) => i.factor.weight > 0);
   if (usable.length === 0) {
-    return { key, support: 0, agreement: 0, conf: 0, modalValue: null, modalLabel: null, count: 0 };
+    return { key, support: 0, agreement: 0, conf: 0, modalValue: null, modalLabel: null, count: 0, firsthandSupport: 0 };
   }
 
   const support = 1 - usable.reduce((p, i) => p * (1 - i.factor.weight), 1);
+  const firsthandSupport =
+    1 -
+    usable
+      .filter((i) => i.obs.sourceType !== "social")
+      .reduce((p, i) => p * (1 - i.factor.weight), 1);
 
   // Modal value = highest total weight; ties go to the most recently observed.
   const groups = new Map<string, { weight: number; newest: Weighted }>();
@@ -243,6 +263,7 @@ function scoreDimension(key: string, items: Weighted[]): DimensionScore {
     modalValue: modal.newest.obs.value,
     modalLabel: modal.newest.obs.valueLabel,
     count: usable.length,
+    firsthandSupport,
   };
 }
 
@@ -261,7 +282,11 @@ export function scoreEvidence(input: ScoreInput): ScoreResult {
       nowMs,
     );
     allFactors.push(...items.map((i) => i.factor));
-    for (const i of items) if (i.factor.weight > 0) contributorIds.add(i.obs.contributorId);
+    // Social posts have no identified contributor, so counting them would inflate both the
+    // ceiling and the "N nearby reports" shown to the requester. Firsthand sources only.
+    for (const i of items) {
+      if (i.factor.weight > 0 && i.obs.sourceType !== "social") contributorIds.add(i.obs.contributorId);
+    }
     dimensions.push(scoreDimension(req.key, items));
   }
 

@@ -15,4 +15,5 @@ export default {
   lng: __t.f64(),
   accuracyM: __t.f64(),
   source: __t.string(),
+  claimedPlaceId: __t.option(__t.string()),
 };

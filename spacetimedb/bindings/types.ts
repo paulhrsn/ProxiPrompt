@@ -231,6 +231,7 @@ export const PulsePost = __t.object("PulsePost", {
   freshnessNote: __t.string(),
   commentCount: __t.u32(),
   claimsJson: __t.option(__t.string()),
+  verifiedNearby: __t.bool(),
 });
 export type PulsePost = __Infer<typeof PulsePost>;
 
@@ -339,6 +340,7 @@ export const UserLocation = __t.object("UserLocation", {
   lng: __t.f64(),
   accuracyM: __t.f64(),
   source: __t.string(),
+  claimedPlaceId: __t.option(__t.string()),
   capturedAt: __t.timestamp(),
   svc: __t.u8(),
 });

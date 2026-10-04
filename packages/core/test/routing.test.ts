@@ -23,7 +23,7 @@ function cand(userId: string, meters: number, over: Partial<Candidate> = {}): Ca
   };
 }
 
-const base = { place, nowMs: NOW, config, radiusM: 150, count: 2, excludeIds: [], requesterId: "req" };
+const base = { place, nowMs: NOW, config, radiusM: 150, count: 2, excludeIds: [], requesterIds: ["req"] };
 
 describe("selectResponders", () => {
   it("selects the closest `count` eligible candidates, ranked by distance", () => {
@@ -56,6 +56,16 @@ describe("selectResponders", () => {
     const r = selectResponders({ ...base, candidates: [cand("req", 5)] });
     expect(r.selected).toEqual([]);
     expect(r.excluded).toEqual([{ userId: "req", reason: "requester" }]);
+  });
+
+  it("excludes every requester attached to the job, not just the first", () => {
+    const r = selectResponders({
+      ...base,
+      requesterIds: ["req", "req2"],
+      candidates: [cand("req", 5), cand("req2", 10), cand("a", 30)],
+    });
+    expect(r.selected.map((s) => s.userId)).toEqual(["a"]);
+    expect(r.excluded.map((e) => e.userId).sort()).toEqual(["req", "req2"]);
   });
 
   it("excludes already-asked users", () => {
@@ -156,5 +166,139 @@ describe("nextWaveCount", () => {
   it("does not ask past the recipient cap", () => {
     expect(nextWaveCount({ ...wave, alreadyAsked: 4, stillWaiting: 0, msSinceLastWave: 30_000 })).toBe(1);
     expect(nextWaveCount({ ...wave, alreadyAsked: 5, stillWaiting: 0, msSinceLastWave: 30_000 })).toBe(0);
+  });
+});
+
+describe("adjacent buildings (GPS cannot separate them)", () => {
+  // Duderstadt and Pierpont are 78 m apart, so a 150 m radius covers both. The real report:
+  // of the two people asked about Duderstadt, one was standing in Pierpont.
+  const inPierpont = (over: Partial<Candidate> = {}) =>
+    cand("pierpont-person", 82, { nearestOtherBuildingM: 65, accuracyM: 10, ...over });
+
+  it("does not ask someone sitting squarely on another building", () => {
+    // Right on the Pierpont pin: 78 m from the target, 0 m from Pierpont.
+    const r = selectResponders({
+      ...base,
+      candidates: [inPierpont({ nearestOtherBuildingM: 0, accuracyM: 10 })],
+    });
+    expect(r.selected).toEqual([]);
+    expect(r.excluded[0]).toMatchObject({ userId: "pierpont-person", reason: "wrong_building" });
+  });
+
+  it("still asks when the gap is inside the GPS error, since the reading cannot settle it", () => {
+    // 82 m from the target, 65 m from Pierpont. A 17 m gap between buildings that are
+    // themselves 78 m apart proves nothing, so they are asked and ranked last instead.
+    const r = selectResponders({ ...base, candidates: [inPierpont({ accuracyM: 40 })] });
+    expect(r.selected.map((s) => s.userId)).toEqual(["pierpont-person"]);
+    expect(r.selected[0]!.atTargetBuilding).toBe(false);
+  });
+
+  it("never trusts an accuracy figure tighter than the floor", () => {
+    // 82 - 70 = 12 m gap with a claimed ±1 m fix: still inside GPS_CONFIDENCE_FLOOR_M.
+    const r = selectResponders({
+      ...base,
+      candidates: [inPierpont({ accuracyM: 1, nearestOtherBuildingM: 70 })],
+    });
+    expect(r.selected.map((s) => s.userId)).toEqual(["pierpont-person"]);
+  });
+
+  it("asks whoever reads as inside the target first when both are plausible", () => {
+    const r = selectResponders({
+      ...base,
+      count: 1,
+      candidates: [
+        cand("next-door", 60, { nearestOtherBuildingM: 50, accuracyM: 40 }),
+        cand("inside-target", 90, { nearestOtherBuildingM: 140, accuracyM: 40 }),
+      ],
+    });
+    expect(r.selected.map((s) => s.userId)).toEqual(["inside-target"]);
+  });
+
+  it("treats an unknown nearest building as no evidence either way", () => {
+    const r = selectResponders({ ...base, candidates: [cand("unknown", 90)] });
+    expect(r.selected.map((s) => s.userId)).toEqual(["unknown"]);
+    expect(r.selected[0]!.atTargetBuilding).toBe(true);
+  });
+});
+
+describe("an explicit building claim beats GPS", () => {
+  const dude = CATALOG_PLACES.find((p) => p.id === "duderstadt-center")!;
+  const target = { id: dude.id, lat: dude.lat, lng: dude.lng };
+
+  it("never asks someone who says they are in a different building", () => {
+    const r = selectResponders({
+      ...base,
+      place: target,
+      // Standing right on the Duderstadt pin, but they told us they are in Pierpont.
+      candidates: [cand("chin", 0, { claimedPlaceId: "pierpont-commons", lat: dude.lat, lng: dude.lng })],
+    });
+    expect(r.selected).toEqual([]);
+    expect(r.excluded[0]).toMatchObject({ userId: "chin", reason: "wrong_building" });
+  });
+
+  it("trusts a claim on the target over a GPS reading that says next door", () => {
+    // `cand` offsets from Shapiro, so place these two by hand relative to Duderstadt.
+    const atDude = (meters: number) => ({ lat: dude.lat + meters / 111_195, lng: dude.lng });
+    const r = selectResponders({
+      ...base,
+      place: target,
+      count: 1,
+      candidates: [
+        { ...cand("closer-but-unclaimed", 0, { nearestOtherBuildingM: 5, accuracyM: 40 }), ...atDude(20) },
+        { ...cand("claimed-target", 0, { claimedPlaceId: dude.id, nearestOtherBuildingM: 5, accuracyM: 40 }), ...atDude(80) },
+      ],
+    });
+    expect(r.selected.map((s) => s.userId)).toEqual(["claimed-target"]);
+  });
+
+  it("ignores claims when the caller gives no place id", () => {
+    const r = selectResponders({
+      ...base,
+      candidates: [cand("chin", 10, { claimedPlaceId: "pierpont-commons" })],
+    });
+    expect(r.selected.map((s) => s.userId)).toEqual(["chin"]);
+  });
+});
+
+describe("the reported field scenario, end to end", () => {
+  // Measured 2026-10-03 against the live DB: three friends on GPS, all asked about
+  // Duderstadt, distances to the Duderstadt pin vs their nearest building (Pierpont).
+  const field = [
+    { id: "jerry", toTarget: 80, toNearestOther: 59 },
+    { id: "shiyuan", toTarget: 83, toNearestOther: 78 },
+    { id: "chin", toTarget: 82, toNearestOther: 65 },
+  ];
+
+  const candidatesWith = (accuracyM: number, claims: Record<string, string> = {}) =>
+    field.map((f) => ({
+      ...cand(f.id, f.toTarget, {
+        accuracyM,
+        nearestOtherBuildingM: f.toNearestOther,
+        claimedPlaceId: claims[f.id],
+      }),
+    }));
+
+  it("geometry alone cannot separate these three, and does not pretend to", () => {
+    // Gaps of 21 m (jerry), 5 m (shiyuan) and 17 m (chin) between buildings 78 m apart.
+    // Only jerry's clears GPS_CONFIDENCE_FLOOR_M, so the other two stay eligible — ranked
+    // last, and the prompt asks them to confirm. The claim below is the actual fix.
+    const r = selectResponders({ ...base, place: { id: "duderstadt-center", ...place }, candidates: candidatesWith(10) });
+    expect(r.excluded).toMatchObject([{ userId: "jerry", reason: "wrong_building" }]);
+    expect(r.selected.map((s) => s.userId)).toEqual(["chin", "shiyuan"]);
+    expect(r.selected.every((s) => s.atTargetBuilding === false)).toBe(true);
+  });
+
+  it("with claims set, asks exactly the people who said they are in Duderstadt", () => {
+    const r = selectResponders({
+      ...base,
+      place: { id: "duderstadt-center", ...place },
+      candidates: candidatesWith(10, {
+        jerry: "duderstadt-center",
+        chin: "pierpont-commons",
+        shiyuan: "duderstadt-center",
+      }),
+    });
+    expect(r.selected.map((s) => s.userId).sort()).toEqual(["jerry", "shiyuan"]);
+    expect(r.excluded).toMatchObject([{ userId: "chin", reason: "wrong_building" }]);
   });
 });

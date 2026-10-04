@@ -31,10 +31,16 @@ export type QueryStatus = (typeof QUERY_STATUSES)[number];
 export const QUERY_TRANSITIONS: Record<string, readonly string[]> = {
   planning: ['clarifying', 'collecting', 'synthesizing', 'refused', 'failed', 'cancelled'],
   clarifying: ['planning', 'cancelled'],
-  collecting: ['synthesizing', 'answered', 'insufficient', 'failed', 'cancelled'],
-  synthesizing: ['answered', 'insufficient', 'failed'],
+  // collecting -> collecting and synthesizing -> synthesizing are no-ops, allowed on
+  // purpose: the worker reads queries through a subscription that can lag its own writes,
+  // so it may re-send a status it has already set. Rejecting that failed the whole query.
+  collecting: ['collecting', 'synthesizing', 'answered', 'insufficient', 'failed', 'cancelled'],
+  synthesizing: ['synthesizing', 'answered', 'insufficient', 'failed'],
   answered: ['answered'],
-  insufficient: [],
+  // SPEC §7 step 9: a response that lands after the deadline still becomes evidence, and
+  // may turn "not enough" into a real answer within LATE_ACCEPT_S. Without this edge the
+  // asker is stuck on "insufficient" while the answer sits in the database.
+  insufficient: ['answered', 'insufficient'],
   refused: [],
   failed: [],
   cancelled: [],

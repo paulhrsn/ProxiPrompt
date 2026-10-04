@@ -104,7 +104,16 @@ async def test_llm_survey_question_leaking_requester_is_replaced(with_key, monke
     bad = {**GOOD_PLAN, "survey": {**GOOD_PLAN["survey"], "question": "Someone asked: is it quiet near you?"}}
     mock_llm(monkeypatch, bad)
     p = await planner.plan(plan_req(shapiro))
-    assert p.survey.question == SHAPIRO_Q
+    # Replaced by the generated place + dimension question, not by the requester's own text.
+    assert "someone asked" not in p.survey.question.lower()
+    assert p.survey.question != SHAPIRO_Q
+    assert p.survey.question.startswith("Quick question about Shapiro Undergraduate Library")
+
+
+async def test_llm_good_survey_question_is_kept(with_key, monkeypatch, shapiro):
+    mock_llm(monkeypatch, GOOD_PLAN)
+    p = await planner.plan(plan_req(shapiro))
+    assert p.survey.question == "How loud and how full is it at Shapiro right now?"
 
 
 async def test_llm_refusal_honoured(with_key, monkeypatch, shapiro):

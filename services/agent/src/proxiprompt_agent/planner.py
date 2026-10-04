@@ -7,6 +7,7 @@ The heuristic path reports ``planner: "heuristic"`` and exists for tests / offli
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -63,7 +64,10 @@ CONTROL_TEMPLATES: dict[str, tuple[str, list[tuple[str, str, int]]]] = {
 
 
 def build_control(key: str) -> SurveyControl:
-    if key in CONTROL_TEMPLATES:
+    if is_freeform(key):
+        # The card already shows the question, so the label just names the control.
+        label, opts = "Your answer", CONTROL_TEMPLATES["other:answer"][1]
+    elif key in CONTROL_TEMPLATES:
         label, opts = CONTROL_TEMPLATES[key]
     else:
         label, opts = label_for(key), [("low", "Low", 0), ("medium", "Medium", 1), ("high", "High", 2)]
@@ -82,8 +86,9 @@ def option_label(key: str, ordinal: int) -> str | None:
     return None
 
 
-def make_dimension(key: str) -> PlanDimension:
-    return PlanDimension.model_validate({"key": key, "label": label_for(key)})
+def make_dimension(key: str, question: str | None = None) -> PlanDimension:
+    label = as_question(question) if (is_freeform(key) and question) else label_for(key)
+    return PlanDimension.model_validate({"key": key, "label": label})
 
 
 # ---------------------------------------------------------------------------
@@ -186,11 +191,40 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
+# A question matching no keyword in the vocabulary. The key is derived from the question so
+# that two unrelated freeform questions about the same place do NOT share an evidence job
+# (findAttachableJob compares dimension sets), and so the prompt can show the real question
+# instead of the meaningless "what is the answer right now?".
+FREEFORM_PREFIX = "other:ask_"
+
+
+def freeform_key(text: str) -> str:
+    norm = re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+    digest = hashlib.sha1(norm.encode("utf-8")).hexdigest()[:10]
+    return f"{FREEFORM_PREFIX}{digest}"
+
+
+def is_freeform(key: str) -> bool:
+    return key.startswith(FREEFORM_PREFIX)
+
+
+def as_question(text: str) -> str:
+    """The asker's wording, tidied into a question a stranger can answer at a glance."""
+    q = " ".join((text or "").split())
+    q = re.sub(r"\b(lmk|pls|please|thanks|ty|asap)\b[\s!.?]*$", "", q, flags=re.I).strip()
+    if not q:
+        return "Can you confirm this?"
+    q = q[0].upper() + q[1:]
+    if not q.endswith(("?", ".", "!")):
+        q += "?"
+    return q[:200]
+
+
 def detect_dimensions(text: str) -> list[str]:
     t = (text or "").lower()
     found = [key for key, pat in KEYWORDS if pat.search(t)]
     if not found:
-        found = ["other:answer"]
+        found = [freeform_key(text)]
     return found[:MAX_CONTROLS]
 
 
@@ -203,7 +237,11 @@ def _decision_text(text: str, place_name: str, keys: list[str]) -> str:
     return f"Whether to go to {place_name} right now"
 
 
-def _survey_question(place_name: str, keys: list[str]) -> str:
+def _survey_question(place_name: str, keys: list[str], asked: str | None = None) -> str:
+    # Freeform: the asker's own question is the only sensible wording. It names no person
+    # and does not imply the asker is nearby, so SPEC §3 is satisfied.
+    if len(keys) == 1 and is_freeform(keys[0]):
+        return f"At {place_name}: {as_question(asked or '')}"[:200]
     labels = [DIMENSION_LABELS.get(k, label_for(k)).lower() for k in keys]
     if len(labels) == 1:
         what = labels[0]
@@ -218,22 +256,30 @@ def _assemble_plan(req: PlanRequest, keys: list[str], planner: str, canonical_in
                    decision: str | None = None, question: str | None = None,
                    dimensions: list[PlanDimension] | None = None, survey: Survey | None = None,
                    radius: Any = None, count: Any = None) -> PlanResponse:
-    dims = dimensions or [make_dimension(k) for k in keys]
+    asked_text = (req.text or "").strip()
+    dims = dimensions or [make_dimension(k, asked_text) for k in keys]
     keys = [d.key for d in dims]
     labels = " and ".join(d.label.lower() for d in dims)
-    asked = (req.text or "").strip()[:300]
-    if survey is not None and asked:
-        survey = survey.model_copy(update={"question": asked})
+    intent = canonical_intent
+    if not intent:
+        intent = (
+            f"{as_question(asked_text)} (at {req.place.name})"
+            if len(dims) == 1 and is_freeform(dims[0].key)
+            else f"Current {labels} at {req.place.name}"
+        )
     return PlanResponse(
-        canonical_intent=canonical_intent or f"Current {labels} at {req.place.name}",
+        canonical_intent=intent,
         intent_key=f"{req.place.id}:{'+'.join(sorted(keys))}",
         decision=decision or _decision_text(req.text, req.place.name, keys),
         dimensions=dims,
         needs_clarification=False,
         clarification=None,
+        # The survey question is always generated from the place + dimensions, never the
+        # requester's own words: one evidence job can serve several queries, and SPEC §3
+        # forbids a prompt that identifies or quotes whoever asked.
         survey=survey
         or Survey(
-            question=asked or question or _survey_question(req.place.name, keys),
+            question=question or _survey_question(req.place.name, keys, asked_text),
             controls=[build_control(k) for k in keys[:MAX_CONTROLS]],
             allow_note=True,
         ),
@@ -460,11 +506,20 @@ def synthesize_heuristic(req: SynthesizeRequest) -> SynthesizeResponse:
     objective_parts: list[str] = []
     subjective_parts: list[str] = []
     supporting: list[str] = []
+    # The plan carries a human label per dimension; for a freeform question that label IS
+    # the question, and label_for() would otherwise expose the hashed key ("ask 9f2c1b").
+    planned_labels = {d.key: (d.label or "") for d in (req.dimensions or [])}
+    freeform_only = bool(by_dim) and all(is_freeform(d) for d in by_dim)
     for dim, items in by_dim.items():
         value, n = _modal(items)
-        label = DIMENSION_LABELS.get(dim, label_for(dim)).lower()
+        label = (planned_labels.get(dim) or DIMENSION_LABELS.get(dim) or label_for(dim)).lower()
+        if is_freeform(dim):
+            label = (planned_labels.get(dim) or req.text or "this").strip().rstrip("?").lower()
         kind = items[0].kind
-        if kind == "subjective":
+        if is_freeform(dim):
+            # "<question>: Yes" reads naturally; "<question> is Yes" does not.
+            objective_parts.append(f"{value}")
+        elif kind == "subjective":
             subjective_parts.append(f"people describe the {label} as “{value}”")
         else:
             objective_parts.append(f"{label} is {value}")
@@ -479,7 +534,9 @@ def synthesize_heuristic(req: SynthesizeRequest) -> SynthesizeResponse:
     else:
         body = ", ".join(parts[:-1]) + " and " + parts[-1]
     headline = f"{req.place.name}: reports say {body}."
-    if not objective_parts and subjective_parts:
+    if freeform_only:
+        headline = f"{body} — according to {len(req.evidence)} report{'s' if len(req.evidence) != 1 else ''} from {req.place.name}."
+    elif not objective_parts and subjective_parts:
         headline = f"{req.place.name}: {body} (opinion, not a measurement)."
 
     # Recommendation from valence of modal values; never stronger than confidence allows.
@@ -504,9 +561,14 @@ def synthesize_heuristic(req: SynthesizeRequest) -> SynthesizeResponse:
     if not any(e.verified_nearby for e in req.evidence):
         caveats.append("None of the reports were confirmed as coming from someone nearby.")
     ages = [e.age_s for e in req.evidence]
-    summary = (
+    lead = (
         f"Based on {len(req.evidence)} recent report{'s' if len(req.evidence) != 1 else ''} "
-        f"(freshest {_age_phrase(min(ages))}), {body}. Confidence: {req.confidence.level}."
+        f"(freshest {_age_phrase(min(ages))})"
+    )
+    summary = (
+        f"{lead}, people at {req.place.name} say: {body}. Confidence: {req.confidence.level}."
+        if freeform_only
+        else f"{lead}, {body}. Confidence: {req.confidence.level}."
     )
     return SynthesizeResponse(
         headline=headline, recommendation=rec, summary=summary,  # type: ignore[arg-type]

@@ -46,6 +46,10 @@ export const user_location = table(
     lng: t.f64(),
     accuracy_m: t.f64(),
     source: t.string(), // 'gps' | 'demo'
+    // The building the user explicitly said they are in. Adjacent campus buildings are
+    // 70-80 m apart, inside phone GPS error, so coordinates alone cannot tell Duderstadt
+    // from Pierpont. When set, routing trusts this over the coordinates (SPEC §4).
+    claimed_place_id: t.string().optional(),
     captured_at: t.timestamp(),
     svc: t.u8().index('btree'),
   }

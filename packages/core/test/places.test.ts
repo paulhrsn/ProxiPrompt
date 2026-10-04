@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG_PLACES, describeLocation, resolveCatalogPlace } from "../src/places";
+import {
+  CATALOG_PLACES,
+  describeLocation,
+  hasAmbiguousNeighbor,
+  nearestCatalogPlace,
+  neighboringPlaces,
+  resolveCatalogPlace,
+} from "../src/places";
 
 describe("resolveCatalogPlace", () => {
   it("matches Shapiro aliases", () => {
@@ -36,5 +43,26 @@ describe("describeLocation", () => {
     expect(reading.places).toEqual([]);
     expect(reading.ambiguous).toBe(false);
     expect(reading.label).toBe("40.0000, -80.0000");
+  });
+});
+
+describe("adjacent catalog buildings", () => {
+  it("knows Duderstadt and Pierpont are too close for GPS to separate", () => {
+    const dude = CATALOG_PLACES.find((p) => p.id === "duderstadt-center")!;
+    expect(neighboringPlaces(dude).map((p) => p.id)).toContain("pierpont-commons");
+    expect(hasAmbiguousNeighbor(dude)).toBe(true);
+  });
+
+  it("knows Michigan Stadium stands alone", () => {
+    const stadium = CATALOG_PLACES.find((p) => p.id === "michigan-stadium")!;
+    expect(neighboringPlaces(stadium)).toEqual([]);
+    expect(hasAmbiguousNeighbor(stadium)).toBe(false);
+  });
+
+  it("names the nearest building to a point at any distance", () => {
+    const pierpont = CATALOG_PLACES.find((p) => p.id === "pierpont-commons")!;
+    const nearest = nearestCatalogPlace(pierpont.lat, pierpont.lng);
+    expect(nearest?.place.id).toBe("pierpont-commons");
+    expect(nearest?.distanceM).toBeCloseTo(0, 5);
   });
 });

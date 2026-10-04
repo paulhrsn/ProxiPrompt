@@ -99,13 +99,28 @@ export const deactivate_device = spacetimedb.reducer({ endpoint: t.string() }, (
 });
 
 export const update_location = spacetimedb.reducer(
-  { lat: t.f64(), lng: t.f64(), accuracy_m: t.f64(), source: t.string() },
-  (ctx, { lat, lng, accuracy_m, source }) => {
+  { lat: t.f64(), lng: t.f64(), accuracy_m: t.f64(), source: t.string(), claimed_place_id: t.string().optional() },
+  (ctx, { lat, lng, accuracy_m, source, claimed_place_id }) => {
     checkFinite('lat', lat, -90, 90);
     checkFinite('lng', lng, -180, 180);
     checkFinite('accuracy_m', accuracy_m, 0, 100_000);
     if (source !== 'gps' && source !== 'demo') fail("source must be 'gps' or 'demo'");
-    const row = { identity: ctx.sender, lat, lng, accuracy_m, source, captured_at: ctx.timestamp, svc: 0 };
+    // An empty string clears the claim. A non-empty one must name a place we know, so a
+    // stale or hand-crafted id cannot make someone eligible for a place that does not exist.
+    let claimed: string | undefined;
+    if (claimed_place_id && claimed_place_id.length > 0) {
+      claimed = requirePlace(ctx, checkString('claimed_place_id', claimed_place_id, 1, 200)).id;
+    }
+    const row = {
+      identity: ctx.sender,
+      lat,
+      lng,
+      accuracy_m,
+      source,
+      claimed_place_id: claimed,
+      captured_at: ctx.timestamp,
+      svc: 0,
+    };
     if (ctx.db.user_location.identity.find(ctx.sender)) ctx.db.user_location.identity.update(row);
     else ctx.db.user_location.insert(row);
   }
@@ -153,7 +168,12 @@ export const upsert_place = spacetimedb.reducer(
 export const submit_query = spacetimedb.reducer(
   { client_request_id: t.string(), place_id: t.string(), text: t.string() },
   (ctx, { client_request_id, place_id, text }) => {
-    requireProfile(ctx);
+    // The service identity submits on behalf of ASI:One chat users (SPEC §9). It has no
+    // profile and is trusted infrastructure, so it is exempt from the profile requirement
+    // and the per-account hourly limit — otherwise every Agentverse question would share
+    // one user's 10/h budget.
+    const viaService = isService(ctx);
+    if (!viaService) requireProfile(ctx);
     const crid = checkString('client_request_id', client_request_id, 1, 64);
     const body = checkString('text', text, 3, 300);
 
@@ -162,7 +182,7 @@ export const submit_query = spacetimedb.reducer(
 
     requirePlace(ctx, place_id);
     checkBlocklist('text', body);
-    consumeRate(ctx, 'queries', QUERY_RATE_LIMIT_PER_HOUR);
+    if (!viaService) consumeRate(ctx, 'queries', QUERY_RATE_LIMIT_PER_HOUR);
 
     const q = ctx.db.query.insert({
       id: 0n,

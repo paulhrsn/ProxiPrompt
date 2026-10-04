@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from proxiprompt_agent import llm, planner
@@ -22,8 +24,14 @@ async def test_heuristic_plan_for_demo_question(shapiro):
         assert 3 <= len(c.options) <= 4
         assert [o.ordinal for o in c.options] == list(range(len(c.options)))
     assert p.responder_radius_m == 150 and p.responder_count == 2
-    # survey never identifies the requester or implies they are nearby
-    assert p.survey.question == SHAPIRO_Q
+    # The survey question is generated from place + dimensions, never the requester's own
+    # words: one evidence job can serve several queries, and it must not identify or quote
+    # whoever asked, nor imply the responder is the one who asked (SPEC §3).
+    assert p.survey.question != SHAPIRO_Q
+    assert p.survey.question.startswith("Quick question about Shapiro Undergraduate Library")
+    assert "noise level" in p.survey.question
+    for leak in ("someone asked", "they want", "a user"):
+        assert leak not in p.survey.question.lower()
 
 
 @pytest.mark.parametrize(
@@ -35,12 +43,13 @@ async def test_heuristic_plan_for_demo_question(shapiro):
         ("Is the dining hall open?", "open_status"),
         ("What's the vibe tonight?", "atmosphere"),
         ("Is it packed right now?", "crowd_level"),
-        ("blah blah", "other:answer"),
+        ("blah blah", "other:ask_"),  # freeform: key derived from the question itself
     ],
 )
 async def test_heuristic_keywords(shapiro, text, dim):
     p = await planner.plan(plan_req(shapiro, text))
-    assert dim in [d.key for d in p.dimensions]
+    keys = [d.key for d in p.dimensions]
+    assert any(k == dim or k.startswith(dim) for k in keys), keys
     assert len(p.dimensions) <= 3
 
 
@@ -166,3 +175,40 @@ async def test_summarize_post_comment_adds_claim_and_no_claims_when_nothing_stat
     assert {c.dimension for c in r.claims} >= {"wait_time"}
     r2 = await planner.summarize_post(post_req(shapiro, "Studying here today."))
     assert r2.claims == [] and r2.summary
+
+
+async def test_freeform_question_keeps_the_asker_s_wording(shapiro):
+    """A question matching no keyword must not become "what is the answer right now?"."""
+    asked = "did they restock the white monsters"
+    p = await planner.plan(plan_req(shapiro, asked))
+    assert len(p.dimensions) == 1
+    key = p.dimensions[0].key
+    assert planner.is_freeform(key)
+    assert "white monsters" in p.survey.question
+    assert "the answer" not in p.survey.question.lower()
+    assert p.survey.question.startswith(f"At {shapiro['name']}:")
+    # Two different freeform questions about one place must not share an evidence job,
+    # which findAttachableJob decides from the dimension sets.
+    other = await planner.plan(plan_req(shapiro, "did anyone leave a blue umbrella"))
+    assert other.dimensions[0].key != key
+
+
+async def test_freeform_synthesis_does_not_say_answer_is(shapiro):
+    asked = "did they restock the white monsters"
+    key = planner.freeform_key(asked)
+    req = SynthesizeRequest.model_validate(
+        {
+            "query_id": "q1", "text": asked, "canonical_intent": "x", "place": shapiro,
+            "dimensions": [{"key": key, "label": asked}],
+            "evidence": [ev(key, "Yes", i="1")],
+            "confidence": {"score": 0.6, "level": "Medium", "ceiling": 0.6},
+            "missing_dimensions": [],
+        }
+    )
+    r = await planner.synthesize(req)
+    assert "answer is" not in r.headline.lower()
+    assert "answer is" not in r.summary.lower()
+    assert "Yes" in r.headline
+    # The hashed key must never surface in copy a human reads.
+    for text in (r.headline, r.summary, *r.supporting):
+        assert "ask_" not in text and not re.search(r"\bask [0-9a-f]{6,}", text.lower()), text

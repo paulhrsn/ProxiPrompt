@@ -274,3 +274,43 @@ describe("scoreEvidence", () => {
     expect(r.sufficient).toBe(false);
   });
 });
+
+describe("social evidence never carries an answer on its own", () => {
+  const social = (id: string) =>
+    obs({ id, sourceType: "social", verifiedNearby: false, contributorId: `anon:${id}`, ordinal: null });
+
+  it("is never sufficient without a firsthand observation", () => {
+    const r = scoreEvidence({
+      observations: [social("s1"), social("s2"), social("s3")],
+      required: REQ_NOISE,
+      nowMs: NOW,
+    });
+    // Support is real (three 0.35-weight posts agree) but none of it is firsthand.
+    expect(r.dimensions[0]!.support).toBeGreaterThan(0.5);
+    expect(r.dimensions[0]!.firsthandSupport).toBe(0);
+    expect(r.sufficient).toBe(false);
+  });
+
+  it("does not count toward contributors or the ceiling", () => {
+    const r = scoreEvidence({
+      observations: [social("s1"), social("s2"), social("s3")],
+      required: REQ_NOISE,
+      nowMs: NOW,
+    });
+    expect(r.contributors).toBe(0);
+    expect(r.ceiling).toBe(0);
+    expect(r.score).toBe(0);
+  });
+
+  it("still informs the score alongside a firsthand response", () => {
+    const r = scoreEvidence({
+      // Half-aged response (weight 0.75) so support does not already saturate at 1.
+      observations: [obs({ id: "a", contributorId: "u1", observedAtMs: NOW - TTL_MS / 2 }), social("s1")],
+      required: REQ_NOISE,
+      nowMs: NOW,
+    });
+    expect(r.contributors).toBe(1);
+    expect(r.dimensions[0]!.support).toBeGreaterThan(r.dimensions[0]!.firsthandSupport);
+    expect(r.sufficient).toBe(true);
+  });
+});

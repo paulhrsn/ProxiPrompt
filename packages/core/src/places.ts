@@ -52,6 +52,61 @@ export function findCatalogPlace(id: string): CatalogPlace | undefined {
   return CATALOG_PLACES.find((p) => p.id === id);
 }
 
+/**
+ * Two catalog buildings this close together cannot be told apart by phone GPS
+ * (Duderstadt and Pierpont are 78 m apart; Shapiro and Hatcher 71 m), so a prompt
+ * about one of them has to let the responder say they are in the other.
+ */
+export const AMBIGUOUS_NEIGHBOR_M = 120;
+
+export interface NearestPlace {
+  place: CatalogPlace;
+  distanceM: number;
+}
+
+/**
+ * Closest catalog place to a point, at any distance. Null only if the catalog is empty.
+ * Pass `excludeId` to find the closest OTHER building, which is what tells you whether a
+ * reading is confidently inside the place you care about.
+ */
+export function nearestCatalogPlace(
+  lat: number,
+  lng: number,
+  excludeId?: string,
+  places: readonly CatalogPlace[] = CATALOG_PLACES,
+): NearestPlace | null {
+  let best: NearestPlace | null = null;
+  for (const place of places) {
+    if (excludeId && place.id === excludeId) continue;
+    const distanceM = haversineM(lat, lng, place.lat, place.lng);
+    if (!best || distanceM < best.distanceM) best = { place, distanceM };
+  }
+  return best;
+}
+
+/** Other catalog places within `withinM` of this one, nearest first. */
+export function neighboringPlaces(
+  place: { id: string; lat: number; lng: number },
+  withinM: number = AMBIGUOUS_NEIGHBOR_M,
+  places: readonly CatalogPlace[] = CATALOG_PLACES,
+): CatalogPlace[] {
+  return places
+    .filter((p) => p.id !== place.id)
+    .map((p) => ({ p, d: haversineM(place.lat, place.lng, p.lat, p.lng) }))
+    .filter((row) => row.d <= withinM)
+    .sort((a, b) => a.d - b.d)
+    .map((row) => row.p);
+}
+
+/** True when another catalog building is close enough that GPS cannot distinguish them. */
+export function hasAmbiguousNeighbor(
+  place: { id: string; lat: number; lng: number },
+  withinM: number = AMBIGUOUS_NEIGHBOR_M,
+  places: readonly CatalogPlace[] = CATALOG_PLACES,
+): boolean {
+  return neighboringPlaces(place, withinM, places).length > 0;
+}
+
 /** A catalog name is only offered inside this radius. */
 const NAMED_WITHIN_M = 400;
 /** A second building is a real alternative when it is this close to the first. */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, freshnessNote, haversineM, rankPosts, type CatalogPlace } from "@proxiprompt/core";
+import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
 import { CLIENT_ID, emailOf, useDevMode, useOidc } from "./auth";
 import { clearLegacyToken, list, useDb } from "./spacetime";
 
@@ -29,6 +29,14 @@ function go(path: string) {
 }
 
 const LAST_QUERY = "pp.lastQuery";
+
+/**
+ * A prompt is only worth showing while it can still be answered. submit_response rejects
+ * an expired batch, so a card left up past `expiresAt` can only fail on Send.
+ */
+function isAnswerable(p: { responded: boolean; expiresAt: { microsSinceUnixEpoch: bigint } }): boolean {
+  return !p.responded && toMs(p.expiresAt) > Date.now();
+}
 const OPEN_QUERY = new Set(["planning", "clarifying", "collecting", "synthesizing"]);
 
 function askTarget(conn: Conn): string {
@@ -64,8 +72,12 @@ export default function App() {
   const profile = conn ? list(conn.db.myProfile.iter())[0] : undefined;
   void tick;
   const showTabs = Boolean(signedIn && profile && conn && route.name !== "respond");
-  const pushed = route.name === "query" || route.name === "respond" || route.name === "activity" || route.name === "place";
-  const tab = route.name === "posts" || route.name === "place" ? "posts" : route.name === "profile" || route.name === "activity" ? "you" : "ask";
+  const pushed = route.name === "query" || route.name === "respond" || route.name === "place";
+  const tab =
+    route.name === "posts" || route.name === "place" ? "posts"
+    : route.name === "activity" ? "questions"
+    : route.name === "profile" ? "you"
+    : "ask";
 
   return (
     <div className={showTabs ? "app with-tabs" : "app"}>
@@ -92,6 +104,7 @@ export default function App() {
       {showTabs ? (
         <nav className="tabbar" aria-label="Primary">
           <button type="button" className={tab === "ask" ? "tab on" : "tab"} onClick={() => conn && go(askTarget(conn))}><Icon name="ask" />Ask</button>
+          <button type="button" className={tab === "questions" ? "tab on" : "tab"} onClick={() => go("/activity")}><Icon name="questions" />Questions</button>
           <button type="button" className={tab === "posts" ? "tab on" : "tab"} onClick={() => go("/posts")}><Icon name="posts" />Posts</button>
           <button type="button" className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
         </nav>
@@ -101,9 +114,10 @@ export default function App() {
   );
 }
 
-function Icon({ name }: { name: "ask" | "posts" | "you" | "back" }) {
+function Icon({ name }: { name: "ask" | "posts" | "you" | "back" | "questions" }) {
   const props = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   if (name === "ask") return <svg {...props}><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" /></svg>;
+  if (name === "questions") return <svg {...props}><path d="M4.5 6.5h15v9h-8l-4 3.5v-3.5h-3z" /></svg>;
   if (name === "posts") return <svg {...props}><path d="M5 7h14M5 12h14M5 17h9" /></svg>;
   if (name === "back") return <svg {...props} width={20} height={20}><path d="M14.5 6.5 9 12l5.5 5.5" /></svg>;
   return <svg {...props}><circle cx="12" cy="9" r="3" /><path d="M6.5 19c1.1-2.8 3-4.2 5.5-4.2s4.4 1.4 5.5 4.2" /></svg>;
@@ -172,6 +186,21 @@ function Onboard({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
   );
 }
 
+/** Polls my_queries for a just-submitted row. Returns its id, or null if it never lands. */
+async function waitForQueryId(
+  conn: NonNullable<ReturnType<typeof useDb>["conn"]>,
+  clientRequestId: string,
+  timeoutMs = 3000,
+): Promise<bigint | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const found = list(conn.db.myQueries.iter()).find((row) => row.clientRequestId === clientRequestId);
+    if (found) return found.id;
+    if (Date.now() >= deadline) return null;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+}
+
 function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
   const [q, setQ] = useState("");
   const [place, setPlace] = useState<CatalogPlace | null>(CATALOG_PLACES[0]);
@@ -194,8 +223,10 @@ function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> })
       });
       const clientRequestId = crypto.randomUUID();
       await conn.reducers.submitQuery({ clientRequestId, placeId: place.id, text: q.trim() });
-      const found = list(conn.db.myQueries.iter()).find((row) => row.clientRequestId === clientRequestId);
-      go(found ? `/q/${found.id}` : "/activity");
+      // The reducer resolves before the my_queries view update arrives, so the row is not
+      // there yet. Wait for it instead of bouncing the asker to /activity.
+      const id = await waitForQueryId(conn, clientRequestId);
+      go(id ? `/q/${id}` : "/activity");
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -330,7 +361,20 @@ function Posts({ conn }: { conn: Conn }) {
           .map((c) => ({ atMs: toMs(c.createdAt) })),
         nowMs: now,
       });
-      return { ...p, id: String(p.id), postId: p.id, maxFreshness: note.maxFreshness, verifiedNearby: false, recentSubstantiveComments: Number(p.commentCount), createdAtMs: toMs(p.createdAt) };
+      // Substantive = long enough to carry information, matching the filter used for the
+      // freshness note above; the raw comment count would also score "ok" and "lol".
+      const substantive = list(conn.db.pulseComments.iter()).filter(
+        (c) => c.postId === p.id && c.text.trim().length > 12,
+      ).length;
+      return {
+        ...p,
+        id: String(p.id),
+        postId: p.id,
+        maxFreshness: note.maxFreshness,
+        verifiedNearby: p.verifiedNearby,
+        recentSubstantiveComments: substantive,
+        createdAtMs: toMs(p.createdAt),
+      };
     });
     return rankPosts(mapped, sort, now);
   }, [conn, sort, now, feedId]);
@@ -425,6 +469,55 @@ function summaryAdds(text: string, summary: string): boolean {
   return true;
 }
 
+/**
+ * SPEC §12 P0 guardrails: delete your own content, report someone else's. Both reducers
+ * existed and were guardrail-tested but had no way in from the UI.
+ */
+function ModerationRow({
+  mine,
+  onDelete,
+  onReport,
+}: {
+  mine: boolean;
+  onDelete: () => Promise<void>;
+  onReport: (reason: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const run = async (fn: () => Promise<void>, done: string) => {
+    if (busy) return;
+    setBusy(true);
+    setNote("");
+    try {
+      await fn();
+      setNote(done);
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (note) return <p className="hint">{note}</p>;
+  return (
+    <div className="row">
+      {mine ? (
+        <button className="text" type="button" disabled={busy} onClick={() => void run(onDelete, "Deleted.")}>
+          Delete
+        </button>
+      ) : (
+        <button
+          className="text"
+          type="button"
+          disabled={busy}
+          onClick={() => void run(() => onReport("inappropriate"), "Reported. Thanks.")}
+        >
+          Report
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PostCard({
   conn,
   post,
@@ -458,6 +551,7 @@ function PostCard({
     }
   }
   const commentLabel = count === 0 ? "Comment" : count === 1 ? "1 comment" : `${count} comments`;
+  const mine = list(conn.db.myPosts.iter()).some((row) => row.postId === post.postId);
   return (
     <article className="card">
       <div className="meta">
@@ -481,6 +575,11 @@ function PostCard({
             <button className="text" type="button" disabled={reacting} onClick={() => void react("This changed")}>This changed</button>
           </div>
           <CommentBox conn={conn} postId={post.postId} />
+          <ModerationRow
+            mine={mine}
+            onDelete={() => conn.reducers.deletePost({ postId: post.postId })}
+            onReport={(reason) => conn.reducers.reportContent({ targetType: "post", targetId: post.postId, reason })}
+          />
         </>
       ) : null}
     </article>
@@ -495,9 +594,19 @@ function CommentBox({ conn, postId }: { conn: Conn; postId: bigint }) {
   const [err, setErr] = useState("");
   return (
     <div className="thread">
-      {comments.filter((c) => !/^(still true|this changed)$/i.test(c.text.trim())).map((c) => (
-        <p className="comment" key={String(c.id)}><span>{c.authorLabel}</span>{c.text}</p>
-      ))}
+      {comments.filter((c) => !/^(still true|this changed)$/i.test(c.text.trim())).map((c) => {
+        const isMine = list(conn.db.myComments.iter()).some((row) => row.commentId === c.id);
+        return (
+          <div key={String(c.id)}>
+            <p className="comment"><span>{c.authorLabel}</span>{c.text}</p>
+            <ModerationRow
+              mine={isMine}
+              onDelete={() => conn.reducers.deleteComment({ commentId: c.id })}
+              onReport={(reason) => conn.reducers.reportContent({ targetType: "comment", targetId: c.id, reason })}
+            />
+          </div>
+        );
+      })}
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -555,25 +664,60 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
       {q.status === "clarifying" && clar && (
         <div className="card">
           <h2>{clar.question}</h2>
-          <div className="choices">
-            {clar.options.map((o) => <button key={o} className={choice === o ? "on" : ""} onClick={() => setChoice(o)}>{o}</button>)}
-          </div>
-          <button className="btn" disabled={!choice} onClick={() => conn.reducers.answerClarification({ queryId: q.id, choice })}>Continue</button>
+          {clar.options?.length ? (
+            <div className="choices">
+              {clar.options.map((o) => <button key={o} className={choice === o ? "on" : ""} onClick={() => setChoice(o)}>{o}</button>)}
+            </div>
+          ) : (
+            // A clarification with no options would otherwise strand the query here forever.
+            <label className="label">
+              Your answer
+              <input className="input" value={choice} placeholder="Type your answer" onChange={(e) => setChoice(e.target.value)} />
+            </label>
+          )}
+          <button className="btn" disabled={!choice.trim()} onClick={() => conn.reducers.answerClarification({ queryId: q.id, choice: choice.trim() })}>Continue</button>
         </div>
       )}
+      {!ans && OPEN_QUERY.has(q.status) ? (
+        // A question that stalls (nobody nearby, agent down) would otherwise sit open forever.
+        <button
+          className="text"
+          type="button"
+          onClick={() => void conn.reducers.cancelQuery({ queryId: q.id }).catch(() => undefined)}
+        >
+          Cancel this question
+        </button>
+      ) : null}
       {ans && (
         <>
           {ans.summary && ans.summary !== ans.headline ? <p className="body">{ans.summary}</p> : null}
           <p>
             <span className={`level ${ans.confidence?.level}`}>{ans.confidence?.level ?? "Low"}</span>
-            {typeof ans.sourceCount === "number" ? ` · ${ans.sourceCount} reports` : ""}
+            {typeof ans.sourceCount === "number" ? ` · ${ans.sourceCount} report${ans.sourceCount === 1 ? "" : "s"}` : ""}
             {ans.updatedAtMs ? ` · ${formatAge((Date.now() - ans.updatedAtMs) / 1000)}` : ""}
           </p>
-          <button className="text" onClick={() => setDiag(!diag)}>{diag ? "Hide details" : "Details"}</button>
-          {diag && <pre className="diag">{JSON.stringify({ planner: ans.planner, confidence: ans.confidence, factors: ans.factors, supporting: ans.supporting, caveats: ans.caveats }, null, 2)}</pre>}
+          {ans.supporting?.length ? (
+            <ul className="sources">
+              {ans.supporting.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          ) : null}
+          {ans.caveats?.length ? (
+            <ul className="caveats">
+              {ans.caveats.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          ) : null}
+          {diag && <pre className="diag">{JSON.stringify({ planner: ans.planner, confidence: ans.confidence, factors: ans.factors }, null, 2)}</pre>}
         </>
       )}
-      <button className="text" type="button" onClick={() => { sessionStorage.removeItem(LAST_QUERY); go("/"); }}>New question</button>
+      <div className="footer-actions">
+        {ans ? (
+          <button className="text" type="button" onClick={() => setDiag(!diag)}>{diag ? "Hide details" : "Details"}</button>
+        ) : null}
+        <button className="text" type="button" onClick={() => { sessionStorage.removeItem(LAST_QUERY); go("/"); }}>
+          Ask something else
+        </button>
+      </div>
+      <p className="hint">This question stays in Questions.</p>
     </section>
   );
 }
@@ -587,7 +731,7 @@ type PromptRow = {
 };
 
 function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
-  const pending = list(conn.db.myPrompts.iter()).filter((p) => !p.responded);
+  const pending = list(conn.db.myPrompts.iter()).filter(isAnswerable);
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const prompt = pending.find((p) => !hidden.has(String(p.batchId)));
   const id = prompt ? String(prompt.batchId) : "";
@@ -615,6 +759,11 @@ function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn
 function Respond({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>; id: string }) {
   const prompt = list(conn.db.myPrompts.iter()).find((p) => String(p.batchId) === id);
   if (!prompt) return <p>This prompt is gone or isn’t for you.</p>;
+  // Say which it is, rather than leaving a form whose Send can only fail.
+  if (prompt.responded) return <p>You already answered this one. Thanks.</p>;
+  if (toMs(prompt.expiresAt) <= Date.now()) {
+    return <p>This question about {prompt.placeName} expired. Someone else will have picked it up.</p>;
+  }
   return (
     <section>
       <AnswerForm conn={conn} prompt={prompt} />
@@ -683,24 +832,63 @@ function AnswerForm({
   );
 }
 
+/** What the requester sees instead of a raw status string. */
+const STATUS_LABEL: Record<string, string> = {
+  planning: "Working on it",
+  clarifying: "Needs your answer",
+  collecting: "Asking people nearby",
+  synthesizing: "Writing the answer",
+  answered: "Answered",
+  insufficient: "Not enough evidence",
+  refused: "Can't answer that",
+  failed: "Something went wrong",
+  cancelled: "Cancelled",
+};
+
 function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
   const queries = list(conn.db.myQueries.iter()).sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
-  const prompts = list(conn.db.myPrompts.iter()).filter((p) => !p.responded);
+  const prompts = list(conn.db.myPrompts.iter()).filter(isAnswerable);
   return (
     <section>
-      <h1>Your questions</h1>
-      {prompts.map((p) => (
-        <div className="card" key={String(p.batchId)} onClick={() => go(`/respond/${p.batchId}`)}>
-          <p className="body">{p.question}</p>
-          <p>{p.placeName}</p>
-        </div>
-      ))}
-      {queries.map((q) => (
-        <div className="card" key={String(q.id)} onClick={() => go(`/q/${q.id}`)}>
-          <div className="meta"><span>{q.status}</span><span>{formatAge((Date.now() - toMs(q.createdAt)) / 1000)}</span></div>
-          <p className="body">{q.text}</p>
-        </div>
-      ))}
+      {prompts.length ? (
+        <>
+          <h1>Asked of you</h1>
+          {prompts.map((p) => (
+            <div className="card" key={String(p.batchId)} onClick={() => go(`/respond/${p.batchId}`)}>
+              <p className="body">{p.question}</p>
+              <p>{p.placeName}</p>
+            </div>
+          ))}
+        </>
+      ) : null}
+      <h1>Recent questions</h1>
+      {queries.length === 0 ? <p>Nothing yet. Ask about a place and it will show up here.</p> : null}
+      {queries.map((q) => {
+        const open = OPEN_QUERY.has(q.status);
+        const answer = q.answerJson
+          ? (JSON.parse(q.answerJson) as { headline?: string; confidence?: { level?: string }; sourceCount?: number })
+          : null;
+        return (
+          <div className="card" key={String(q.id)} onClick={() => go(`/q/${q.id}`)}>
+            <div className="meta">
+              <span>{STATUS_LABEL[q.status] ?? q.status}</span>
+              <span>{formatAge((Date.now() - toMs(q.createdAt)) / 1000)}</span>
+            </div>
+            <p className="body">{q.text}</p>
+            <p>{placeLabel(conn, q.placeId)}</p>
+            {answer?.headline ? <p className="body">{answer.headline}</p> : null}
+            {answer?.confidence?.level ? (
+              <p>
+                <span className={`level ${answer.confidence.level}`}>{answer.confidence.level}</span>
+                {typeof answer.sourceCount === "number"
+                  ? ` · ${answer.sourceCount} report${answer.sourceCount === 1 ? "" : "s"}`
+                  : ""}
+              </p>
+            ) : null}
+            {open ? <p>In progress</p> : null}
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -782,7 +970,8 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       localStorage.setItem("pp.demoPlace", demo);
       setGpsFix(null);
       setGpsError("");
-      void conn.reducers.updateLocation({ lat: p.lat, lng: p.lng, accuracyM: 15, source: "demo" });
+      // Picking a demo building is itself a claim: they named the building.
+      void conn.reducers.updateLocation({ lat: p.lat, lng: p.lng, accuracyM: 15, source: "demo", claimedPlaceId: p.id });
       return;
     }
     localStorage.removeItem("pp.demoPlace");
@@ -797,15 +986,25 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         const lng = pos.coords.longitude;
         const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : 50;
         setGpsFix({ lat, lng });
-        void conn.reducers.updateLocation({ lat, lng, accuracyM: accuracy, source: "gps" }).catch((err: unknown) => {
-          setGpsError(err instanceof Error ? err.message : "Could not save GPS");
-        });
+        // A claim only holds near where it was made; past that we are somewhere else.
+        const stillHere = claim && haversineM(claim.lat, claim.lng, lat, lng) <= CLAIM_VALID_M;
+        void conn.reducers
+          .updateLocation({
+            lat,
+            lng,
+            accuracyM: accuracy,
+            source: "gps",
+            claimedPlaceId: stillHere ? claim.id : "",
+          })
+          .catch((err: unknown) => {
+            setGpsError(err instanceof Error ? err.message : "Could not save GPS");
+          });
       },
       (err) => setGpsError(err.message || "Location permission was denied"),
       { enableHighAccuracy: true, maximumAge: 0 },
     );
     return () => navigator.geolocation.clearWatch(watch);
-  }, [conn, demo]);
+  }, [conn, demo, claim]);
 
   return (
     <section>
@@ -857,10 +1056,15 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         const gpsPoint = gpsFix ?? (loc && loc.source === "gps" ? { lat: loc.lat, lng: loc.lng } : null);
         const mapPoint = picked ? { lat: picked.lat, lng: picked.lng } : gpsPoint;
         const reading = gpsPoint && !demo ? describeLocation(gpsPoint.lat, gpsPoint.lng) : null;
-        const claimNear = claim && gpsPoint && haversineM(claim.lat, claim.lng, gpsPoint.lat, gpsPoint.lng) <= 80 ? claim : null;
+        const claimNear = claim && gpsPoint && haversineM(claim.lat, claim.lng, gpsPoint.lat, gpsPoint.lng) <= CLAIM_VALID_M ? claim : null;
         const claimed = claimNear?.id ? CATALOG_PLACES.find((p) => p.id === claimNear.id) : undefined;
         const label = claimed ? `${claimed.name} (${reading?.coords})` : reading?.label;
-        const showChoices = !!reading?.ambiguous && !claimed;
+        // Buildings 70-80 m apart are inside GPS error, so offer the choice whenever the
+        // nearest one has a close neighbour — not only when the two happen to be near-tied.
+        const nearbyOptions = reading?.places[0]
+          ? [reading.places[0], ...neighboringPlaces(reading.places[0])].slice(0, 3)
+          : [];
+        const showChoices = !claimed && nearbyOptions.length > 1;
         return (
           <>
             <div className="status">
@@ -868,7 +1072,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
             </div>
             {showChoices ? (
               <div className="confirm">
-                {reading.places.map((place) => (
+                {nearbyOptions.map((place) => (
                   <button
                     key={place.id}
                     className="btn ghost"
@@ -881,7 +1085,10 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
               </div>
             ) : null}
             {claimed ? (
-              <button className="text" type="button" onClick={() => savePlaceClaim(null, setClaim)}>Not this building</button>
+              <>
+                <p className="hint">Prompts for other buildings will skip you.</p>
+                <button className="text" type="button" onClick={() => savePlaceClaim(null, setClaim)}>Not this building</button>
+              </>
             ) : null}
             {mapPoint ? <MiniMap lat={mapPoint.lat} lng={mapPoint.lng} /> : null}
           </>
@@ -915,7 +1122,6 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
           <span>Developer diagnostics</span>
           <input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); localStorage.setItem("pp.diag", e.target.checked ? "1" : "0"); }} />
         </label>
-        <button type="button" onClick={() => go("/activity")}>Questions</button>
         <button
           type="button"
           onClick={() => {
@@ -961,6 +1167,9 @@ function MiniMap({ lat, lng }: { lat: number; lng: number }) {
     : `https://www.openstreetmap.org/export/embed.html?bbox=${lng - pad},${lat - pad},${lng + pad},${lat + pad}&layer=mapnik&marker=${lat},${lng}`;
   return <iframe className="minimap" title="Current location" src={src} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />;
 }
+
+/** A claimed building only applies while you are still near where you claimed it. */
+const CLAIM_VALID_M = 80;
 
 const PLACE_CLAIM_KEY = "pp.placeClaim";
 

@@ -134,6 +134,9 @@ const PulsePost = t.row('PulsePost', {
   freshness_note: t.string(),
   comment_count: t.u32(),
   claims_json: t.string().optional(),
+  // Whether the author's location vouched for this post when it was summarised. SPEC §10's
+  // ranking weights it at 0.15; without it here the client has to guess, and guessed false.
+  verified_nearby: t.bool(),
 });
 
 const PulseComment = t.row('PulseComment', {
@@ -150,6 +153,12 @@ const PulseComment = t.row('PulseComment', {
 // hackathon scale). Removed (deleted/hidden) rows are excluded; author identity is never emitted.
 export const pulse_posts = spacetimedb.anonymousView({ name: 'pulse_posts', public: true }, t.array(PulsePost), (ctx) => {
   const out = [];
+  // One pass over observations: which posts had a verified-nearby author. Place-level only,
+  // so this exposes no coordinates (SPEC §3).
+  const verifiedPosts = new Set<string>();
+  for (const o of ctx.db.observation.iter()) {
+    if (o.source_type === 'post' && o.verified_nearby) verifiedPosts.add(o.source_id);
+  }
   for (const p of ctx.db.post.iter()) {
     if (p.deleted || p.hidden) continue;
     const prof = p.attribution === 'profile' ? ctx.db.user_profile.identity.find(p.author) : undefined;
@@ -167,6 +176,7 @@ export const pulse_posts = spacetimedb.anonymousView({ name: 'pulse_posts', publ
       freshness_note: p.freshness_note,
       comment_count: p.comment_count,
       claims_json: p.claims_json ?? undefined,
+      verified_nearby: verifiedPosts.has(`post:${p.id}`),
     });
   }
   return out;

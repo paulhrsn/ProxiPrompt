@@ -67,6 +67,7 @@ Deployment target: PWA → Vercel; module → SpacetimeDB MainCloud; orchestrato
 ## 4. Location
 - PWA requests foreground geolocation when opened and on an interval while open; writes `{lat,lng,accuracy_m,source,captured_at}` via reducer.
 - `source` is `gps` or `demo`. Demo mode substitutes coordinates at acquisition only; every downstream step (distance, eligibility, routing, notifications) is the real pipeline. Demo-sourced locations are labeled in the UI and diagnostics.
+- **Claimed building.** Adjacent catalog buildings sit 70-80 m apart (Duderstadt-Pierpont 78 m, Shapiro-Hatcher 71 m), inside phone GPS error, so coordinates cannot tell them apart. `user_location.claimed_place_id` records the building the user explicitly selected; `update_location` rejects an id that is not a known place, and an empty value clears it. A claim is a statement rather than an inference, so routing trusts it over the coordinates: a claim on the target place makes someone eligible and ranks them first, a claim on any other place excludes them (`wrong_building`). Picking a demo building counts as a claim. The web app drops a claim once the user moves more than 80 m from where they made it.
 - Location freshness for routing: `LOCATION_MAX_AGE_S` (normal 1800, demo 21600).
 - Production would use native background geofencing; the PWA records last-known location while opened. This limitation is stated honestly in the pitch.
 
@@ -113,7 +114,7 @@ Flow:
 2. Worker sees it, calls agent `plan`. Refusal → `refused`. Clarification (rare; only when two plausible interpretations need materially different evidence) → `clarifying`; `answer_clarification` reducer returns to `planning`.
 3. Worker clamps TTL/radius/count, then looks for an active job at the same place whose dimension set overlaps (Jaccard ≥ 0.5) → attach query. Otherwise create a job.
 4. Worker scores fresh observations for the place. Sufficient → `synthesizing`. Else create a prompt batch and select responders.
-5. Responder selection: location fresh, within radius (clamped 50–500 m, default 150), not the requester, has active push device, not notifications-blocked, not in cooldown, not already a recipient for this job. Rank by distance then reliability. First wave is 2. If that group has not produced a sufficient answer after `EXPAND_AFTER_S`, or everyone in it has already responded, ask a new group of 2 who have not been asked. Repeat until the answer is sufficient, nobody new is nearby, or the job reaches 5 recipients.
+5. Responder selection: location fresh, within radius (clamped 50–500 m, default 150), not the requester *of any query attached to this job*, has not claimed a different building, has active push device, not notifications-blocked, not in cooldown, not already a recipient for this job. Rank people who read as inside the target building first, then by distance, then reliability. Because the radius is wider than the gap between adjacent buildings, a GPS-only reading next door is ranked last rather than excluded, and any prompt about a place with a catalog neighbour within 120 m carries an "Are you at {place}? / I'm not there" control whose pass answer is discarded and triggers the next wave. First wave is 2. If that group has not produced a sufficient answer after `EXPAND_AFTER_S`, or everyone in it has already responded, ask a new group of 2 who have not been asked. Repeat until the answer is sufficient, nobody new is nearby, or the job reaches 5 recipients.
 6. `submit_response` reducer: only selected recipients, once per batch (unique), within expiry. Each answer becomes observations (`verified_nearby` = recipient selection was proximity-based on a fresh location).
 7. Worker re-scores on each response. Stops when sufficient, when no further wave is available, or at `JOB_DEADLINE_S`.
 8. Worker calls agent `synthesize` per attached query with explicit evidence bundle and deterministic confidence. Writes answer → `answered`, or `insufficient` if no usable evidence. Notifies requester via push.
@@ -142,7 +143,9 @@ Per observation weight:
 
 Per dimension: `support = 1 − Π(1 − wᵢ)`; `agreement` = weight share of the modal value (ordinal values within one step count as half agreement); `dim_conf = support × agreement`.
 
-Overall: weighted mean of `dim_conf` over required dimensions (objective weight 1.0, subjective 0.5). Ceiling by independent contributors: 1 → 0.6, 2 → 0.8, ≥3 → 0.95. Level: ≥0.70 High, ≥0.45 Medium, else Low. Sufficient when overall ≥ `SUFFICIENT_SCORE` (0.6) and every objective required dimension has support ≥ 0.5.
+Overall: weighted mean of `dim_conf` over required dimensions (objective weight 1.0, subjective 0.5). Ceiling by independent contributors: 1 → 0.6, 2 → 0.8, ≥3 → 0.95. Level: ≥0.70 High, ≥0.45 Medium, else Low. Sufficient when overall ≥ `SUFFICIENT_SCORE` (0.6) and every objective required dimension has **firsthand** support ≥ 0.5.
+
+**Firsthand vs social.** `support` counts every source; `firsthand_support` counts everything except `source_type:"social"`. Sufficiency, the independent-contributor count, and the ceiling all use firsthand only, so scraped public posts can inform a score but can never answer a query on their own and never appear in the "N recent nearby reports" figure. Social observations are also stored under their own `other:social_mention` dimension rather than a surveyed one, so they cannot distort a real dimension's modal value or agreement.
 
 Contradiction: a newer observation on the same dimension with a value ≥2 ordinal steps away halves older observations' freshness for that dimension.
 
@@ -151,6 +154,8 @@ Users see High/Medium/Low + "N recent nearby reports · updated Xs ago". Numeric
 ## 9. Agent contract (JSON over HTTP; mirrored by zod in `packages/core` and pydantic in `services/agent`)
 
 `POST /plan` → `{ canonical_intent, intent_key, decision, dimensions:[{key,label,kind,volatility,proposed_ttl_s}], needs_clarification, clarification:{question,options[]}|null, survey:{question, controls:[{dimension_key,label,options:[{value,label,ordinal}]}] (1–3), allow_note:true}, responder_radius_m, responder_count, refusal:{reason}|null, planner:"llm"|"heuristic" }`
+
+`survey.question` is generated from the place and dimensions ("Quick question about Shapiro Undergraduate Library: what are noise level and seating availability like right now?") and is what responders see. It is never the requester's raw text: one evidence job serves every query attached to it (§7 step 3), so one asker's wording would reach responders answering for someone else, and §3 forbids a prompt that identifies or quotes the requester. The agent replaces an LLM-proposed question that leaks the requester, is empty, or exceeds 200 characters.
 Request: `{ query_id, text, place:{id,name,category,lat,lng}, now_iso, recent_evidence:[{dimension,value_label,kind,source_type,age_s,verified_nearby}] }`.
 
 `POST /synthesize` → `{ headline, recommendation:"go"|"maybe"|"avoid"|"insufficient", summary, supporting[], caveats[], planner }`

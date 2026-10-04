@@ -70,7 +70,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   bottom: 0;
   width: min(430px, 100%);
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   height: calc(56px + env(safe-area-inset-bottom));
   padding: 0 8px env(safe-area-inset-bottom);
   background: var(--sheet);
@@ -93,6 +93,34 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 .tab.on { color: var(--black); }
 .tab svg { display: block; }
+
+/* Quiet aside under an action, e.g. "This question stays in Questions." */
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+/* Text buttons sit inline by default and would otherwise run together. */
+.footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.sources,
+.caveats {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.sources li,
+.caveats li { margin-bottom: 4px; }
+.caveats { color: var(--muted); font-style: italic; }
 
 h1 {
   font-family: var(--serif);
