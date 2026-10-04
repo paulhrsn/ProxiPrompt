@@ -191,7 +191,7 @@ async def health(ctx: Context) -> Dict[str, Any]:
         "agent_address": agent.address,
         "llm_configured": llm.llm_enabled(),
         "model": llm.model_name(),
-        "orchestrator_connected": bool(bridge.orchestrator_url()),
+        "orchestrator_connected": await bridge.orchestrator_ready(),
         "mailbox": USE_MAILBOX,
     }
 

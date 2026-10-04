@@ -69,7 +69,7 @@ The two hosts do not share a login. That is intentional: they are two separate p
 2. `list places` - reply: "I cover these places around Ann Arbor:" then places grouped by category (Libraries, Student unions, Academic, Gyms, Dining halls, Restaurants, Outdoors, Transit, Stadiums).
 3. `Is Shapiro busy right now?` - a real query. With neighbors running, the answer arrives in about 10 to 15 s (see timings below) as: a headline, then `Recommendation: Worth going now.` (or `Maybe, check the details first.` / `Probably skip it for now.`), `Confidence: High` (or Medium / Low), `Based on N recent nearby reports (newest just now)`, and the closer "Answers come from people physically near the place, not from guesses."
 
-**Audience sees:** a real query appear in the asker app, then the formatted answer in chat. If a question takes longer than about 45 s the agent first says "Still working on it" and posts the answer as "Update on your earlier question:". A message with no known place gets guidance and "list places"; a refused question gets a refusal, not a guess.
+**Audience sees:** the agent acknowledge the question and return its formatted answer in chat. Chat questions belong to the service identity and are not listed in an ordinary account’s Questions screen. If a question takes longer than about 45 s the agent first says "Still working on it" and posts the answer as "Update on your earlier question:". A message with no known place gets guidance and "list places"; a refused question gets a refusal, not a guess.
 
 ### 3:00 - Close
 
@@ -101,7 +101,7 @@ Do this 30 minutes before.
 6. Notifications: on laptop, You tab, **Enable phone notifications**, allow the browser permission. On iPhone: HTTPS ngrok URL, Share, Add to Home Screen, open from the icon, then enable. Physical iPhone push is untested (see PROGRESS), so do not rely on it live; the in-app prompt pop-up is the dependable path.
 7. Clean slate: You tab, Developer tools, **Wipe activity** (localhost only), so old evidence does not skew the demo.
 8. Dry run the full Shapiro question once, then wipe again. Remember that wiping removes the cached evidence the cache-reuse beat needs; the first question of the demo creates it.
-9. `DEMO_MODE=1` is the default in `pnpm dev`: first wave 10 people, expansion after 10 s, job deadline 30 s.
+9. `DEMO_MODE=1` is the default in `pnpm dev`: first wave up to 10 people, a second wave after 30 s, and a collection deadline at 60 s. Enough evidence can finish earlier; otherwise the result says there is not enough fresh evidence. Late reports can still update it.
 10. Keep the Agentverse profile and ASI:One chat open in other tabs: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile
 
 ## Solo demo: simulated neighbors on MainCloud
@@ -142,7 +142,7 @@ Reducer round trips to MainCloud were 0.1 to 0.3 s, so the pauses are the LLM ca
 | Push notification does not arrive | "Push is wired with Web Push and VAPID, and we tested it on laptop; physical iPhone is not yet tested." Show the in-app prompt pop-up instead. |
 | ASI:One (LLM) slow or down | The agent falls back to a deterministic heuristic planner and marks it `planner: heuristic`. Say so: "That is the offline fallback, never presented as the AI." |
 | MainCloud unreachable | Stop, run `pnpm dev` for the local database. Same product. |
-| ASI:One chat times out | The agent replies "Still working on it" and sends the answer as a follow-up when ready. Show the answer in the app instead. |
+| ASI:One chat times out | The agent replies "Still working on it" and sends the answer as a follow-up when ready. Show the eventual chat answer, or demonstrate a separate app question while chat completes. |
 | Browser shows "Failed to verify token" | Reload. The app drops a rejected saved token and starts a fresh session. |
 | Port in use | `pnpm stop`, then `pnpm dev`. |
 | Answer says Low or insufficient | That is the product working. "We show Low rather than pretend." Add one more nearby answer to raise it. |

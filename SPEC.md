@@ -128,8 +128,8 @@ Timing config (`DEMO_MODE` env toggles):
 |---|---|---|
 | FIRST_WAVE | 10 | 10 |
 | MAX_RECIPIENTS | 20 | 20 |
-| EXPAND_AFTER_S | 30 | 10 |
-| JOB_DEADLINE_S | 120 | 30 (answer accepted until 120) |
+| EXPAND_AFTER_S | 30 | 30 |
+| JOB_DEADLINE_S | 120 | 60 (answer accepted until 120) |
 | RESPONDER_COOLDOWN_S | 600 | 60 |
 | PROMPT_EXPIRY_S | 600 | 600 |
 

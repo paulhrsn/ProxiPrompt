@@ -232,3 +232,21 @@ export function queriesForJob(ctx: Ctx, job: { id: bigint; place_id: string }) {
 export function recipientsForJob(ctx: Ctx, jobId: bigint) {
   return [...ctx.db.prompt_recipient.job_id.filter(jobId)];
 }
+
+/** Atomic with the answer write, including closures performed by the DB scheduler. */
+export function queueAnswerNotification(ctx: Ctx, q: { id:bigint; requester:any; status:string }, answerJson:string, status:string) {
+  const key = `${q.id}:${ctx.timestamp.microsSinceUnixEpoch}`;
+  if (ctx.db.answer_notification.key.find(key)) return;
+  const answer = JSON.parse(answerJson) as Record<string, any>;
+  const titles:Record<string,string> = {answered:'Your answer is ready', insufficient:'Not enough fresh reports',
+    refused:'This question could not be answered', failed:'Your question could not be completed'};
+  const title = status === 'answered' && typeof answer.headline === 'string' ? answer.headline : titles[status];
+  const count = typeof answer.sourceCount === 'number' ? answer.sourceCount : 0;
+  const level = typeof answer.confidence?.level === 'string' ? answer.confidence.level : 'Low';
+  ctx.db.answer_notification.insert({key, query_id:q.id, owner:q.requester,
+    title: `${q.status === 'answered' ? 'Updated answer: ' : ''}${title}`.slice(0,180),
+    body:status === 'insufficient' ? 'Nobody nearby answered in time. You can try again from Questions.' :
+      `${level} confidence · ${count} report${count === 1 ? '' : 's'}`,
+    url:`/#/q/${q.id}`, tag:`answer-${q.id}`, state:'pending', attempts:0,
+    next_attempt_at:ctx.timestamp, created_at:ctx.timestamp, svc:0});
+}

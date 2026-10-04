@@ -79,6 +79,8 @@ fi
 echo "Clearing proxiprompt-test"
 (cd "$ROOT/spacetimedb" && spacetime publish --server local --module-path . proxiprompt-test --delete-data=always -y)
 
+STDB_URI="$SPACETIMEDB_URI" STDB_DB="$SPACETIMEDB_DB" STDB_SERVER=local pnpm --filter @proxiprompt/spacetimedb exec tsx scripts/bootstrap-worker.ts
+
 echo "Starting test orchestrator on :${ORCH_PORT}"
 (cd "$ROOT/services/orchestrator" && pnpm exec tsx src/index.ts) > /tmp/proxiprompt-e2e-orch.log 2>&1 &
 pids+=($!)

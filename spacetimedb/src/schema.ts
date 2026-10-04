@@ -337,6 +337,18 @@ export const watch_expiry_schedule = table(
   }
 );
 
+// Recorded from the publishing identity on new/reset databases. Never public.
+export const answer_notification = table({ name: 'answer_notification' }, {
+  key: t.string().primaryKey(), query_id:t.u64().index('btree'), owner:t.identity().index('btree'),
+  title:t.string(), body:t.string(), url:t.string(), tag:t.string(),
+  state:t.string(), attempts:t.u16(), next_attempt_at:t.timestamp(), created_at:t.timestamp(),
+  svc:t.u8().index('btree'),
+});
+
+export const module_owner = table({ name: 'module_owner' }, {
+  id: t.u8().primaryKey(), identity: t.identity(),
+});
+
 export const service_role = table(
   { name: 'service_role' },
   {
@@ -370,5 +382,7 @@ const spacetimedb = schema({
   watch,
   watch_expiry_schedule,
   service_role,
+  module_owner,
+  answer_notification,
 });
 export default spacetimedb;

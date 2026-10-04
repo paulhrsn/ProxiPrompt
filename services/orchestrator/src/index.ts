@@ -7,6 +7,7 @@ import { agentHealth } from "./agent.js";
 import { startAsiServer } from "./asi.js";
 import { resetLoopState, tick } from "./loop.js";
 import { initPush } from "./push.js";
+import { ConnectionLoop } from "./connection-loop.js";
 
 const URI = process.env.SPACETIMEDB_URI ?? "ws://127.0.0.1:3000";
 const DB = process.env.SPACETIMEDB_DB ?? "proxiprompt";
@@ -31,6 +32,7 @@ function saveToken(token: string) {
 const SVC_VIEWS = [
   "SELECT * FROM place",
   "SELECT * FROM svc_query",
+  "SELECT * FROM svc_answer_notification",
   "SELECT * FROM svc_watch",
   "SELECT * FROM svc_query_event",
   "SELECT * FROM svc_evidence_job",
@@ -46,29 +48,6 @@ const SVC_VIEWS = [
   "SELECT * FROM svc_comment",
   "SELECT * FROM svc_impact_event",
 ];
-
-let conn: DbConnection | null = null;
-let busy = false;
-let queued = false;
-
-async function processOnce() {
-  if (!conn) return;
-  if (busy) {
-    queued = true;
-    return;
-  }
-  busy = true;
-  try {
-    do {
-      queued = false;
-      await tick(conn);
-    } while (queued);
-  } catch (e) {
-    console.error("tick failed", e);
-  } finally {
-    busy = false;
-  }
-}
 
 async function seedPlaces(c: DbConnection) {
   for (const p of CATALOG_PLACES) {
@@ -88,79 +67,69 @@ async function seedPlaces(c: DbConnection) {
   }
 }
 
-function connect(): Promise<DbConnection> {
+function connect(signal: AbortSignal, disconnected: () => void): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
-    const token = loadToken();
-    const timer = setTimeout(() => reject(new Error(`timeout connecting to ${URI}/${DB}`)), 15_000);
-    DbConnection.builder()
-      .withUri(URI)
-      .withDatabaseName(DB)
-      .withToken(token)
-      .onConnect(async (c, identity, tok) => {
-        clearTimeout(timer);
-        saveToken(tok);
-        console.log(`orchestrator connected as ${identity.toHexString().slice(0, 12)}…`);
-        try {
-          await c.reducers.claimServiceRole({});
-          console.log("claimed service role");
-        } catch (e) {
-          console.log("claim_service_role:", (e as Error).message);
-        }
-        try {
-          await c.reducers.workerEnsureGc({});
-        } catch (e) {
-          console.log("worker_ensure_gc:", (e as Error).message);
-        }
-        resolve(c);
+    let c: DbConnection | undefined;
+    let settled = false;
+    const fail = (error: unknown) => {
+      if (!settled) { settled = true; clearTimeout(timer); reject(error); }
+      c?.disconnect();
+    };
+    const timer = setTimeout(() => fail(new Error(`Timeout connecting to ${URI}/${DB}`)), 15000);
+    signal.addEventListener("abort", () => fail(new Error("Connection retired")), {once:true});
+    c = DbConnection.builder().withUri(URI).withDatabaseName(DB).withToken(loadToken())
+      .onConnect((connection, identity, token) => {
+        if (signal.aborted || settled) { connection.disconnect(); return; }
+        settled = true; clearTimeout(timer); saveToken(token);
+        console.log(`Worker connected as ${identity.toHexString().slice(0,12)}`);
+        resolve(connection);
       })
-      .onConnectError((_ctx, err) => {
-        clearTimeout(timer);
-        reject(err);
-      })
+      .onConnectError((_ctx, error) => fail(error))
       .onDisconnect(() => {
-        console.warn("disconnected; reconnecting in 2s");
-        conn = null;
-        setTimeout(() => {
-          connect()
-            .then((c) => attach(c))
-            .catch((e) => console.error(e));
-        }, 2000);
-      })
-      .build();
+        if (!settled) fail(new Error("Disconnected before connection completed"));
+        disconnected();
+      }).build();
+    if (signal.aborted) fail(new Error("Connection retired"));
   });
 }
 
-async function attach(c: DbConnection) {
-  conn = c;
-  await new Promise<void>((resolve, reject) => {
-    c.subscriptionBuilder()
-      .onApplied(() => resolve())
-      .onError((ctx) => reject(new Error(String((ctx as { event?: { message?: string } }).event?.message ?? "sub error"))))
+async function prepare(c: DbConnection, signal: AbortSignal) {
+  await c.reducers.workerEnsureGc({}); // Authorization must succeed, not merely connect.
+  await new Promise<void>((resolve,reject) => {
+    const fail = (error: unknown) => { cleanup(); reject(error); };
+    const abort = () => fail(new Error("Subscription retired"));
+    const timer = setTimeout(()=>fail(new Error("Worker subscription timed out")),15000);
+    const cleanup = () => { clearTimeout(timer); signal.removeEventListener("abort",abort); };
+    signal.addEventListener("abort",abort,{once:true});
+    c.subscriptionBuilder().onApplied(()=>{cleanup();resolve();})
+      .onError(ctx=>fail(new Error(String((ctx as {event?:unknown}).event ?? "Subscription failed"))))
       .subscribe(SVC_VIEWS);
+    if (signal.aborted) abort();
   });
-  console.log("subscribed to svc_* views");
+  if (signal.aborted) throw new Error("Connection retired");
   await seedPlaces(c);
-  c.db.svcQuery.onInsert(() => void processOnce());
-  c.db.svcWatch.onInsert(() => void processOnce());
-  c.db.svcObservation.onInsert(() => void processOnce());
-  c.db.svcQuery.onUpdate(() => void processOnce());
-  c.db.svcPromptResponse.onInsert(() => void processOnce());
-  c.db.svcPost.onInsert(() => void processOnce());
-  c.db.svcComment.onInsert(() => void processOnce());
-  setInterval(() => void processOnce(), 2000);
-  void processOnce();
+  if (signal.aborted) throw new Error("Connection retired");
+  resetLoopState();
+  const process = () => { if (runtime.ready === c) void runtime.processOnce(); };
+  c.db.svcQuery.onInsert(process);
+  c.db.svcQuery.onUpdate(process);
+  c.db.svcWatch.onInsert(process);
+  c.db.svcObservation.onInsert(process);
+  c.db.svcPromptResponse.onInsert(process);
+  c.db.svcPost.onInsert(process);
+  c.db.svcComment.onInsert(process);
 }
+
+const runtime = new ConnectionLoop({ connect, prepare, dispose:(c:DbConnection)=>c.disconnect(),
+  process:tick, onReady:()=>console.log("Worker authorized and subscribed"),
+  onError:(error)=>console.error("Worker recovery:",error), });
 
 async function main() {
   initPush();
-  startAsiServer(() => conn, PORT, { onDevWipe: resetLoopState });
-  const healthy = await agentHealth();
-  console.log(`agent ${process.env.AGENT_URL ?? "http://127.0.0.1:8001"} ${healthy ? "up" : "DOWN"}`);
-  const c = await connect();
-  await attach(c);
+  startAsiServer(()=>runtime.ready,PORT,{onDevWipe:resetLoopState});
+  const healthy=await agentHealth();
+  console.log(`Agent ${healthy ? "up" : "DOWN"}`);
+  runtime.start();
+  for (const event of ["SIGINT","SIGTERM"] as const) process.once(event,()=>{runtime.stop();process.exit(0);});
 }
-
-void main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+void main().catch(error=>{console.error(error);process.exit(1);});

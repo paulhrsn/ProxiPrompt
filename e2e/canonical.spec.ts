@@ -77,6 +77,13 @@ test("canonical demo: nearby answers, far is skipped, second ask reuses evidence
     await setDemo(near2, SHAPIRO);
     await setDemo(far, UNION);
 
+    // Reproduce switching from a responder window to the asker. Backgrounding a
+    // connected responder must preserve the recent presence grace period.
+    await near1.evaluate(()=>{
+      Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>"hidden"});
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
     await ask(asker, QUESTION);
 
     await expect

@@ -10,6 +10,7 @@ import { t } from 'spacetimedb/server';
 import { requesterAnswer } from './lib';
 import spacetimedb, {
   comment,
+  answer_notification,
   device,
   evidence_job,
   impact_event,
@@ -338,4 +339,10 @@ export const svc_user_presence = spacetimedb.view(
   { name: 'svc_user_presence', public: true }, t.array(user_presence.rowType),
   (ctx) => ctx.from.service_role.where((s) => s.identity.eq(ctx.sender))
     .rightSemijoin(ctx.from.user_presence, (s, r) => s.svc.eq(r.svc))
+);
+
+export const svc_answer_notification = spacetimedb.view(
+  {name:'svc_answer_notification', public:true},t.array(answer_notification.rowType),
+  ctx=>ctx.from.service_role.where(s=>s.identity.eq(ctx.sender))
+    .rightSemijoin(ctx.from.answer_notification,(s,r)=>s.svc.eq(r.svc))
 );

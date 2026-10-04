@@ -7,6 +7,7 @@ The heuristic path reports ``planner: "heuristic"`` and exists for tests / offli
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -501,7 +502,18 @@ async def review_question(req: PlanRequest) -> tuple[str, str | None]:
     return text, None
 
 
+PLAN_TOTAL_TIMEOUT_S = 45.0  # Review + planning: two 20s LLM budgets and processing margin.
+
+
 async def plan(req: PlanRequest) -> PlanResponse:
+    try:
+        return await asyncio.wait_for(_plan(req), PLAN_TOTAL_TIMEOUT_S)
+    except TimeoutError:
+        logger.warning("Planning exceeded its total budget; using labeled heuristic")
+        return plan_heuristic(req)
+
+
+async def _plan(req: PlanRequest) -> PlanResponse:
     planner_name = "llm" if llm.llm_enabled() else "heuristic"
     # Deterministic guards run before (and regardless of) the LLM.
     reason = guard_input(req.text, req.place.name)

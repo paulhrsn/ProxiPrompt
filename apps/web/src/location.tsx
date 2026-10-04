@@ -71,7 +71,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       } else {
         if (watch !== undefined) navigator.geolocation.clearWatch(watch);
         watch = undefined;
-        void conn!.reducers.heartbeat({ active: false }).catch(() => {});
+        // Keep the last heartbeat for the worker's two-minute grace period. A connected
+        // background tab can receive a prompt while the user switches to the asker.
+        // Do not renew it here: stale tabs expire, and disconnect/logout removes it.
       }
     }
     visibility();
@@ -118,4 +120,3 @@ export function savePlaceClaim(
   if (!next) localStorage.removeItem(PLACE_CLAIM_KEY);
   else localStorage.setItem(PLACE_CLAIM_KEY, JSON.stringify(next));
 }
-

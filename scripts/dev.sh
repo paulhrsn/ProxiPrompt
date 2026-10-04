@@ -76,13 +76,6 @@ if [[ "$SKIP_PORT80" != "1" ]] && ! up "http://127.0.0.1:80/"; then
 fi
 
 if [[ "$STDB_TARGET" == "maincloud" ]]; then
-  # claim_service_role is first-come. A brand-new MainCloud database would sit unclaimed and
-  # public until the orchestrator connects, so only update databases we already own (our worker
-  # token exists). Create and claim new ones deliberately (see PROGRESS "MainCloud").
-  if [[ ! -s "$ROOT/spacetimedb/.local/worker-token-${SPACETIMEDB_DB}" ]]; then
-    echo "Refusing: no worker token for ${SPACETIMEDB_DB}. It is not a database this machine has claimed."
-    exit 1
-  fi
   echo "Using MainCloud database ${SPACETIMEDB_DB} (no local SpacetimeDB)"
   echo "Publishing module ${SPACETIMEDB_DB} to MainCloud"
   (cd "$ROOT/spacetimedb" && spacetime publish --server maincloud --module-path . "$SPACETIMEDB_DB" -y)
@@ -100,9 +93,12 @@ else
 fi
 
 if [[ "$STDB_TARGET" != "maincloud" ]]; then
-  echo "Publishing module proxiprompt"
-  (cd "$ROOT/spacetimedb" && spacetime publish --server local --module-path . proxiprompt -y)
+  echo "Publishing module ${SPACETIMEDB_DB}"
+  (cd "$ROOT/spacetimedb" && spacetime publish --server local --module-path . "$SPACETIMEDB_DB" -y)
 fi
+
+echo "Provisioning the worker through the publishing owner"
+STDB_URI="$SPACETIMEDB_URI" STDB_DB="$SPACETIMEDB_DB" STDB_SERVER="$STDB_TARGET" pnpm --filter @proxiprompt/spacetimedb exec tsx scripts/bootstrap-worker.ts
 
 echo "Starting Fetch agent on :${AGENT_PORT}"
 (cd "$ROOT/services/agent" && uv run python -m proxiprompt_agent.agent) &
@@ -128,7 +124,7 @@ fi
 
 cat <<'EOF'
 
-ProxiPrompt is up. One app, two people, open both of these (they do not share a login):
+ProxiPrompt is up. For two separate demo sessions, open both of these:
 
   Asker      http://localhost:5173/
   Responder  http://127.0.0.1:5173/
@@ -136,6 +132,9 @@ ProxiPrompt is up. One app, two people, open both of these (they do not share a 
 On the responder tab: create a different username, open You, and set Demo location
 to the same place the asker picks. The question pops up over whatever screen
 they are on.
+
+For two real email accounts, use separate browser profiles. The email provider can
+share its login across localhost and 127.0.0.1 even though demo sessions are separate.
 
 Ctrl+C stops the agent, orchestrator, web app, and the SpacetimeDB this script started.
 

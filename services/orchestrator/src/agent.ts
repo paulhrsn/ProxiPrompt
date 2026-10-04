@@ -17,7 +17,7 @@ async function postJson<T>(path: string, body: unknown, parse: (raw: unknown) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(25_000),
+    signal: AbortSignal.timeout(path === "/plan" ? 50_000 : 25_000),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");

@@ -49,6 +49,22 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
+async def orchestrator_ready(client: httpx.AsyncClient | None = None) -> bool:
+    url = orchestrator_url()
+    if not url:
+        return False
+    owned = client is None
+    client = client or httpx.AsyncClient(timeout=2.0)
+    try:
+        response = await client.get(f"{url}/health", headers=_auth_headers())
+        return response.is_success and response.json().get("connected") is True
+    except (httpx.HTTPError, ValueError, TypeError):
+        return False
+    finally:
+        if owned:
+            await client.aclose()
+
+
 def _confidence_text(data: dict[str, Any]) -> str | None:
     c = data.get("confidence")
     if isinstance(c, dict):

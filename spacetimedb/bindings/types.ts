@@ -10,6 +10,22 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const AnswerNotification = __t.object("AnswerNotification", {
+  key: __t.string(),
+  queryId: __t.u64(),
+  owner: __t.identity(),
+  title: __t.string(),
+  body: __t.string(),
+  url: __t.string(),
+  tag: __t.string(),
+  state: __t.string(),
+  attempts: __t.u16(),
+  nextAttemptAt: __t.timestamp(),
+  createdAt: __t.timestamp(),
+  svc: __t.u8(),
+});
+export type AnswerNotification = __Infer<typeof AnswerNotification>;
+
 export const Comment = __t.object("Comment", {
   id: __t.u64(),
   postId: __t.u64(),
@@ -78,6 +94,12 @@ export const JobDeadlineSchedule = __t.object("JobDeadlineSchedule", {
   jobId: __t.u64(),
 });
 export type JobDeadlineSchedule = __Infer<typeof JobDeadlineSchedule>;
+
+export const ModuleOwner = __t.object("ModuleOwner", {
+  id: __t.u8(),
+  identity: __t.identity(),
+});
+export type ModuleOwner = __Infer<typeof ModuleOwner>;
 
 export const MyCommentId = __t.object("MyCommentId", {
   commentId: __t.u64(),
@@ -317,6 +339,9 @@ export const ServiceRole = __t.object("ServiceRole", {
   svc: __t.u8(),
 });
 export type ServiceRole = __Infer<typeof ServiceRole>;
+
+export const SvcAnswerNotification = __t.object("SvcAnswerNotification", {});
+export type SvcAnswerNotification = __Infer<typeof SvcAnswerNotification>;
 
 export const SvcComment = __t.object("SvcComment", {});
 export type SvcComment = __Infer<typeof SvcComment>;

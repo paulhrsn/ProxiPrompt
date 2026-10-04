@@ -204,18 +204,23 @@ const workerToken = readWorkerToken();
 let W = track(await connect(workerToken));
 if (!workerToken) writeWorkerToken(W.token);
 let claimedNow = false;
-await check('claim_service_role: first caller becomes the service identity (once per database)', async () => {
+await check('owner-gated bootstrap rejects ordinary clients and authorizes the persistent worker', async () => {
+  await rejects(R(A).grantServiceRole({identity:A.identity}), /recorded module owner/);
   try {
-    await R(W).claimServiceRole({});
-    claimedNow = true;
-    return 'claimed by worker identity on this run';
-  } catch (e) {
-    if (!/already been claimed/.test(errMessage(e))) throw e;
-    // Already claimed on an earlier run: prove W is the service identity (not "Only the service identity").
-    const m = errMessage(await R(W).workerAddQueryEvent({ queryId: 999999999n, kind: 'x', message: 'x' }).then(() => '', (x: Error) => x));
-    if (/Only the service/.test(m)) throw new Error('claim already taken by a different identity — run `pnpm publish:local:clear` and retry');
-    return 'service role already claimed by this worker identity on a previous run';
+    await R(W).workerEnsureGc({});
+  } catch (error) {
+    if (!/Only the service/.test(errMessage(error))) throw error;
+    // On a reset DB this proves the window before owner provisioning is closed.
+    await rejects(R(A).claimServiceRole({}), /recorded module owner/);
+    await rejects(R(W).claimServiceRole({}), /recorded module owner/);
+    const {execFile}=await import('node:child_process');
+    const {promisify}=await import('node:util');
+    await promisify(execFile)('spacetime',['call','--server',CLI_SERVER,DB,'grant_service_role',JSON.stringify(W.hex),'-y'],{timeout:20000});
+    await R(W).workerEnsureGc({});
+    claimedNow=true;
   }
+  await rejects(R(W).claimServiceRole({}), /already been claimed/);
+  return claimedNow ? 'only publishing owner granted the service role' : 'existing authorized worker retained';
 });
 await check('service identity query relay is capped at 60/h', async () => {
   // Loops until rejected so a re-run inside the same hour (budget partly spent) still passes.
@@ -248,6 +253,7 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
     ['workerAddObservation', { placeId: slug, dimension: 'noise_level', value: 'quiet', valueLabel: 'Quiet', ordinal: 1, kind: 'objective', sourceType: 'response', sourceId: 'x', contributor: undefined, verifiedNearby: true, observedAtMicros: nowMicros(), expiresAtMicros: nowMicros() + 900_000_000n }],
     ['workerInvalidateObservation', { observationId: 1n }],
     ['workerSetAnswer', { queryId: q1, answerJson: '{}', status: 'answered' }],
+    ['workerMarkAnswerNotification', {key:'no-such',outcome:'sent'}],
     ['workerSetPostSummary', { postId: 1n, summary: 's', claimsJson: '[]', freshnessState: 'fresh', freshnessNote: '' }],
     ['workerRecordImpact', { contributor: D.identity, sourceType: 'response', sourceId: 'x', queryId: q1, kind: 'helped' }],
     ['workerSetAdmin', { identity: D.identity, isAdmin: true }],
@@ -266,7 +272,7 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
 
 // ---- worker read mechanism: svc_* views ----
 await subscribe(W, [
-  'svc_user_profile', 'svc_device', 'svc_user_location', 'svc_user_presence', 'svc_query', 'svc_query_event', 'svc_evidence_job',
+  'svc_user_profile', 'svc_device', 'svc_user_location', 'svc_user_presence', 'svc_query', 'svc_answer_notification', 'svc_query_event', 'svc_evidence_job',
   'svc_prompt_batch', 'svc_prompt_recipient', 'svc_prompt_response', 'svc_observation', 'svc_post', 'svc_comment',
   'svc_impact_event', 'svc_report', 'svc_watch',
 ].map((v) => `SELECT * FROM ${v}`));
@@ -296,16 +302,16 @@ await check('worker read: svc_* views return ALL private rows to the service ide
 });
 await check('worker views return NOTHING to a non-service identity', async () => {
   const c = track(await connect());
-  await subscribe(c, ['svc_user_location', 'svc_query', 'svc_prompt_response', 'svc_observation', 'svc_post', 'svc_device'].map((v) => `SELECT * FROM ${v}`));
-  const total = ['svcUserLocation', 'svcQuery', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcDevice'].reduce((n, t) => n + rows(c, t).length, 0);
+  await subscribe(c, ['svc_user_location', 'svc_query', 'svc_prompt_response', 'svc_observation', 'svc_post', 'svc_device', 'svc_answer_notification'].map((v) => `SELECT * FROM ${v}`));
+  const total = ['svcUserLocation', 'svcQuery', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcDevice', 'svcAnswerNotification'].reduce((n, t) => n + rows(c, t).length, 0);
   if (total !== 0) throw new Error(`non-service identity received ${total} rows`);
   // And the same for A, who owns data in those tables:
-  await subscribe(A, ['SELECT * FROM svc_query', 'SELECT * FROM svc_user_location']);
-  if (rows(A, 'svcQuery').length !== 0 || rows(A, 'svcUserLocation').length !== 0) throw new Error('A can read worker views');
+  await subscribe(A, ['SELECT * FROM svc_query', 'SELECT * FROM svc_user_location', 'SELECT * FROM svc_answer_notification']);
+  if (rows(A, 'svcQuery').length !== 0 || rows(A, 'svcUserLocation').length !== 0 || rows(A, 'svcAnswerNotification').length !== 0) throw new Error('A can read worker views');
   return '0 rows for an anonymous identity and for A (who owns rows)';
 });
 await check('private base tables cannot be subscribed to by clients', async () => {
-  const names = ['query', 'prompt_response', 'observation', 'device', 'post', 'comment', 'user_profile', 'service_role'];
+  const names = ['query', 'prompt_response', 'observation', 'device', 'post', 'comment', 'user_profile', 'service_role', 'module_owner', 'user_presence', 'answer_notification'];
   for (const n of names) {
     const c = track(await connect());
     await rejects(subscribe(c, [`SELECT * FROM ${n}`]), /no such table|private/i);
@@ -700,7 +706,16 @@ await check('deadline fires with no orchestrator when a job has no evidence', as
   if (!String(answer.headline).includes('Not enough fresh evidence')) throw new Error(answer.headline);
   const jobRow = rows(W, 'svcEvidenceJob').find((x) => x.id === j.id);
   if (jobRow?.status !== 'expired') throw new Error(`job status ${jobRow?.status}`);
-  return 'insufficient with no worker polling';
+  const notification = await eventually(()=>rows(W,'svcAnswerNotification').find(n=>n.queryId===q.id),3000,'durable deadline notification');
+  if (notification.owner.toHexString() !== A.hex || notification.state !== 'pending') throw new Error('wrong notification owner/state');
+  await rejects(R(B).workerMarkAnswerNotification({key:notification.key,outcome:'sent'}),/Only the service/);
+  await R(W).workerMarkAnswerNotification({key:notification.key,outcome:'retry'});
+  await eventually(()=>rows(W,'svcAnswerNotification').find(n=>n.key===notification.key)?.attempts===1,3000,'retry persisted');
+  await R(W).workerMarkAnswerNotification({key:notification.key,outcome:'sent'});
+  await R(W).workerMarkAnswerNotification({key:notification.key,outcome:'sent'});
+  const receipt=await eventually(()=>rows(W,'svcAnswerNotification').find(n=>n.key===notification.key && n.state==='sent'),3000,'delivery receipt');
+  if (receipt.attempts!==2) throw new Error('sent receipt was not idempotent');
+  return 'insufficient and durable notification queued with no worker polling; receipt/retry persisted';
 });
 
 // ============================================================================================
@@ -757,7 +772,7 @@ await check('non-service identity cannot worker_dev_wipe', () => rejects(R(A).wo
 await check('worker_dev_wipe clears activity, keeps accounts, locations and places', async () => {
   const profilesBefore = rows(W, 'svcUserProfile').length;
   const locsBefore = rows(W, 'svcUserLocation').length;
-  const activity = ['svcQuery', 'svcQueryEvent', 'svcEvidenceJob', 'svcPromptBatch', 'svcPromptRecipient', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcComment', 'svcImpactEvent', 'svcReport', 'svcWatch'];
+  const activity = ['svcQuery', 'svcQueryEvent', 'svcEvidenceJob', 'svcPromptBatch', 'svcPromptRecipient', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcComment', 'svcImpactEvent', 'svcReport', 'svcWatch', 'svcAnswerNotification'];
   if (activity.every((t) => rows(W, t).length === 0)) throw new Error('no activity to wipe; checks above should have created some');
   await R(W).workerDevWipe({});
   await eventually(() => activity.every((t) => rows(W, t).length === 0), 5000, 'activity wiped');

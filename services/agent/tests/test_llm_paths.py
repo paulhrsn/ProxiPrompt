@@ -193,3 +193,34 @@ async def test_summarize_post_llm_failure_falls_back(with_key, monkeypatch, shap
     mock_llm(monkeypatch, exc=llm.LLMError("boom"))
     r = await planner.summarize_post(post_req(shapiro, "Very quiet in here."))
     assert r.planner == "heuristic" and r.claims[0].dimension == "noise_level"
+
+@pytest.mark.asyncio
+async def test_plan_has_a_total_deadline_and_returns_labeled_fallback(with_key, monkeypatch, shapiro):
+    import asyncio
+    monkeypatch.setattr(planner, "PLAN_TOTAL_TIMEOUT_S", 0.02, raising=False)
+    cancelled = asyncio.Event()
+    async def stalled(*args, **kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+    monkeypatch.setattr(llm, "complete_json", stalled)
+    result = await asyncio.wait_for(planner.plan(plan_req(shapiro)), 0.2)
+    assert result.planner == "heuristic"
+    assert cancelled.is_set()
+
+@pytest.mark.asyncio
+async def test_json_retry_shares_one_total_budget(with_key, monkeypatch):
+    import asyncio
+    monkeypatch.setattr(llm, "TOTAL_TIMEOUT_S", 0.02, raising=False)
+    calls = 0
+    async def chat(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return "not json"
+        await asyncio.Event().wait()
+    monkeypatch.setattr(llm, "_chat", chat)
+    with pytest.raises(llm.LLMError, match="budget"):
+        await asyncio.wait_for(llm.complete_json("system", "user"), 0.2)
+    assert calls == 2

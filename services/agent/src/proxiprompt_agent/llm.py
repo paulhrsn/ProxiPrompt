@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ logger = logging.getLogger("proxiprompt.llm")
 ASI_BASE_URL = "https://api.asi1.ai/v1"
 DEFAULT_MODEL = "asi1"  # ASI:One docs: asi1 (also asi1-mini / asi1-ultra)
 TIMEOUT_S = 20.0
+TOTAL_TIMEOUT_S = 20.0  # Shared by the initial request and its JSON repair retry.
 
 
 class LLMError(RuntimeError):
@@ -80,6 +82,13 @@ async def _chat(system: str, user: str) -> str:
 
 
 async def complete_json(system: str, user: str, schema_hint: str = "") -> dict[str, Any]:
+    try:
+        return await asyncio.wait_for(_complete_json(system, user, schema_hint), TOTAL_TIMEOUT_S)
+    except TimeoutError as exc:
+        raise LLMError(f"ASI:One request exceeded its {TOTAL_TIMEOUT_S:g}s total budget") from exc
+
+
+async def _complete_json(system: str, user: str, schema_hint: str = "") -> dict[str, Any]:
     """Ask the model for a JSON object. Retries once on a parse failure.
 
     ``schema_hint`` is appended to the system prompt to describe the expected shape.

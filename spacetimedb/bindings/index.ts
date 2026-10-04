@@ -46,6 +46,7 @@ import CreateWatchReducer from "./create_watch_reducer";
 import DeactivateDeviceReducer from "./deactivate_device_reducer";
 import DeleteCommentReducer from "./delete_comment_reducer";
 import DeletePostReducer from "./delete_post_reducer";
+import GrantServiceRoleReducer from "./grant_service_role_reducer";
 import HeartbeatReducer from "./heartbeat_reducer";
 import RegisterDeviceReducer from "./register_device_reducer";
 import ReportContentReducer from "./report_content_reducer";
@@ -66,6 +67,7 @@ import WorkerDeactivateDeviceReducer from "./worker_deactivate_device_reducer";
 import WorkerDevWipeReducer from "./worker_dev_wipe_reducer";
 import WorkerEnsureGcReducer from "./worker_ensure_gc_reducer";
 import WorkerInvalidateObservationReducer from "./worker_invalidate_observation_reducer";
+import WorkerMarkAnswerNotificationReducer from "./worker_mark_answer_notification_reducer";
 import WorkerMarkNotifiedReducer from "./worker_mark_notified_reducer";
 import WorkerMergeJobPlanReducer from "./worker_merge_job_plan_reducer";
 import WorkerNoteWatchReducer from "./worker_note_watch_reducer";
@@ -95,6 +97,7 @@ import MyWatchesRow from "./my_watches_table";
 import PlaceRow from "./place_table";
 import PulseCommentsRow from "./pulse_comments_table";
 import PulsePostsRow from "./pulse_posts_table";
+import SvcAnswerNotificationRow from "./svc_answer_notification_table";
 import SvcCommentRow from "./svc_comment_table";
 import SvcDeviceRow from "./svc_device_table";
 import SvcEvidenceJobRow from "./svc_evidence_job_table";
@@ -214,6 +217,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, PulsePostsRow),
+  svcAnswerNotification: __table({
+    name: 'svc_answer_notification',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, SvcAnswerNotificationRow),
   svcComment: __table({
     name: 'svc_comment',
     indexes: [
@@ -342,6 +352,7 @@ const reducersSchema = __reducers(
   __reducerSchema("deactivate_device", DeactivateDeviceReducer),
   __reducerSchema("delete_comment", DeleteCommentReducer),
   __reducerSchema("delete_post", DeletePostReducer),
+  __reducerSchema("grant_service_role", GrantServiceRoleReducer),
   __reducerSchema("heartbeat", HeartbeatReducer),
   __reducerSchema("register_device", RegisterDeviceReducer),
   __reducerSchema("report_content", ReportContentReducer),
@@ -362,6 +373,7 @@ const reducersSchema = __reducers(
   __reducerSchema("worker_dev_wipe", WorkerDevWipeReducer),
   __reducerSchema("worker_ensure_gc", WorkerEnsureGcReducer),
   __reducerSchema("worker_invalidate_observation", WorkerInvalidateObservationReducer),
+  __reducerSchema("worker_mark_answer_notification", WorkerMarkAnswerNotificationReducer),
   __reducerSchema("worker_mark_notified", WorkerMarkNotifiedReducer),
   __reducerSchema("worker_merge_job_plan", WorkerMergeJobPlanReducer),
   __reducerSchema("worker_note_watch", WorkerNoteWatchReducer),
@@ -406,6 +418,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "pulse_comments": Omit<typeof tablesSchema.schemaType.tables["pulseComments"], "accessorName"> & { readonly accessorName: "pulse_comments" };
     /** @deprecated Use `pulsePosts` instead. This alias will be removed in the next major version. */
     readonly "pulse_posts": Omit<typeof tablesSchema.schemaType.tables["pulsePosts"], "accessorName"> & { readonly accessorName: "pulse_posts" };
+    /** @deprecated Use `svcAnswerNotification` instead. This alias will be removed in the next major version. */
+    readonly "svc_answer_notification": Omit<typeof tablesSchema.schemaType.tables["svcAnswerNotification"], "accessorName"> & { readonly accessorName: "svc_answer_notification" };
     /** @deprecated Use `svcComment` instead. This alias will be removed in the next major version. */
     readonly "svc_comment": Omit<typeof tablesSchema.schemaType.tables["svcComment"], "accessorName"> & { readonly accessorName: "svc_comment" };
     /** @deprecated Use `svcDevice` instead. This alias will be removed in the next major version. */
@@ -468,6 +482,7 @@ const tableAccessorAliases = {
   "my_watches": "myWatches",
   "pulse_comments": "pulseComments",
   "pulse_posts": "pulsePosts",
+  "svc_answer_notification": "svcAnswerNotification",
   "svc_comment": "svcComment",
   "svc_device": "svcDevice",
   "svc_evidence_job": "svcEvidenceJob",
@@ -528,6 +543,8 @@ export type DbView = __DbViewBase & {
   readonly "pulse_comments": __DbViewBase["pulseComments"];
   /** @deprecated Use `pulsePosts` instead. This alias will be removed in the next major version. */
   readonly "pulse_posts": __DbViewBase["pulsePosts"];
+  /** @deprecated Use `svcAnswerNotification` instead. This alias will be removed in the next major version. */
+  readonly "svc_answer_notification": __DbViewBase["svcAnswerNotification"];
   /** @deprecated Use `svcComment` instead. This alias will be removed in the next major version. */
   readonly "svc_comment": __DbViewBase["svcComment"];
   /** @deprecated Use `svcDevice` instead. This alias will be removed in the next major version. */
@@ -588,6 +605,8 @@ export type Tables = __TablesBase & {
   readonly "pulse_comments": __TablesBase["pulseComments"];
   /** @deprecated Use `pulsePosts` instead. This alias will be removed in the next major version. */
   readonly "pulse_posts": __TablesBase["pulsePosts"];
+  /** @deprecated Use `svcAnswerNotification` instead. This alias will be removed in the next major version. */
+  readonly "svc_answer_notification": __TablesBase["svcAnswerNotification"];
   /** @deprecated Use `svcComment` instead. This alias will be removed in the next major version. */
   readonly "svc_comment": __TablesBase["svcComment"];
   /** @deprecated Use `svcDevice` instead. This alias will be removed in the next major version. */

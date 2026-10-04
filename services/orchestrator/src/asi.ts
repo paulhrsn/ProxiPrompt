@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { CATALOG_PLACES, resolveCatalogPlace } from "@proxiprompt/core";
 import { searchPlaces } from "./places.js";
@@ -18,7 +18,6 @@ export interface AsiRecord {
   progress?: string;
 }
 
-const records = new Map<string, AsiRecord>();
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,6 +81,7 @@ export function startAsiServer(
   port: number,
   hooks: { onDevWipe?: () => void } = {},
 ) {
+  const records = new Map<string, AsiRecord>();
   const server = createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
@@ -111,7 +111,7 @@ export function startAsiServer(
         if (rejectBridge(req, res)) return;
         const body = JSON.parse((await readBody(req)) || "{}") as { text?: string; sender?: string };
         const text = (body.text ?? "").trim();
-        const id = `asi-${Date.now().toString(36)}`;
+        const id = `asi-${randomUUID()}`;
         const place = resolveCatalogPlace(text);
         if (!place) {
           const rec: AsiRecord = {
@@ -150,14 +150,16 @@ export function startAsiServer(
       if (req.method === "GET" && poll) {
         if (rejectBridge(req, res)) return;
         const id = decodeURIComponent(poll[1]);
-        const rec = records.get(id);
+        let rec = records.get(id);
+        const conn = getConn();
+        const q = conn && id.startsWith("asi-") ? [...conn.db.svcQuery.iter()].find(row =>
+          row.clientRequestId === id && !!conn.identity && row.requester.isEqual(conn.identity)) : undefined;
+        if (!rec && q) rec = { id, status:q.status, queryId:String(q.id) };
         if (!rec) {
-          json(res, 404, { error: "unknown id" });
+          json(res, conn ? 404 : 503, { error:conn ? "unknown id" : "ProxiPrompt network is reconnecting. Retry this tracking ID." });
           return;
         }
-        const conn = getConn();
         if (conn) {
-          const q = [...conn.db.svcQuery.iter()].find((row) => row.clientRequestId === id);
           if (q) {
             rec.queryId = String(q.id);
             rec.status = q.status;

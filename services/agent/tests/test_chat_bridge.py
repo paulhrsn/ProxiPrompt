@@ -141,3 +141,13 @@ async def test_no_authorization_header_without_a_bridge_token(monkeypatch):
     async with httpx.AsyncClient(transport=httpx.MockTransport(_recording_handler(seen))) as c:
         await bridge.run_orchestrated("Is Shapiro busy?", "agent1abc", "http://orc", total_s=5, interval_s=0.01, client=c)
     assert seen and all("authorization" not in r.headers for r in seen)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [True, False])
+async def test_health_reports_actual_worker_readiness(monkeypatch, connected):
+    monkeypatch.setenv("ORCHESTRATOR_URL", "http://orch.test")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"ok": True, "connected": connected})
+    )) as client:
+        assert await bridge.orchestrator_ready(client) is connected

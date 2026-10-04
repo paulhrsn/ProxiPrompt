@@ -1,6 +1,7 @@
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { identityFor } from "./fake-conn";
 import { startAsiServer } from "../src/asi";
 
 let server: Server | null = null;
@@ -13,9 +14,11 @@ afterEach(() => {
 
 type Row = { id: bigint; clientRequestId: string; status: string; answerJson?: string };
 
-function fakeConn(queryRow: (id: string) => Row | null) {
-  let current: Row | null = null;
+function fakeConn(queryRow: (id: string) => Row | null, initialId?: string) {
+  let current: Row | null = initialId ? queryRow(initialId) : null;
+  const identity = identityFor("asi_service");
   return {
+    identity,
     reducers: {
       upsertPlace: vi.fn().mockResolvedValue(undefined),
       submitQuery: vi.fn(async ({ clientRequestId }: { clientRequestId: string }) => {
@@ -23,7 +26,7 @@ function fakeConn(queryRow: (id: string) => Row | null) {
       }),
     },
     db: {
-      svcQuery: { iter: vi.fn(() => (current ? [current] : [])) },
+      svcQuery: { iter: vi.fn(() => (current ? [{...current, requester:identity}] : [])) },
       svcQueryEvent: { iter: vi.fn(() => []) },
     },
   };
@@ -79,4 +82,15 @@ describe("GET /asi/query/{id} detail", () => {
     expect(body).not.toHaveProperty("recommendation");
     expect(body).not.toHaveProperty("freshest_age_s");
   });
+});
+
+
+it("recovers an existing service query without an in-memory tracking record", async () => {
+  const id="asi-prior-worker";
+  const conn=fakeConn(clientRequestId=>({id:42n,clientRequestId,status:"answered",
+    answerJson:JSON.stringify({headline:"Seats available",sourceCount:2})}),id);
+  const base=await start(conn);
+  const response=await fetch(`${base}/asi/query/${id}`);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({id,queryId:"42",status:"answered",headline:"Seats available"});
 });

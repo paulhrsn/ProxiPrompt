@@ -22,6 +22,7 @@ import {
   requirePlace,
   requireService,
   requesterAnswer,
+  queueAnswerNotification,
   transitionQuery,
   ts,
 } from './lib';
@@ -92,7 +93,9 @@ export const worker_set_answer = spacetimedb.reducer(
     const q = getQuery(ctx, query_id);
     parseJson('answer_json', answer_json, 60_000);
     transitionQuery(ctx, q, status);
-    ctx.db.query.id.update({ ...q, status, answer_json: requesterAnswer(answer_json), updated_at: ctx.timestamp });
+    const safeAnswer = requesterAnswer(answer_json)!;
+    ctx.db.query.id.update({ ...q, status, answer_json: safeAnswer, updated_at: ctx.timestamp });
+    if (q.answer_json !== safeAnswer || q.status !== status) queueAnswerNotification(ctx,q,safeAnswer,status);
   }
 );
 
@@ -221,6 +224,8 @@ export const job_deadline_reached = spacetimedb.reducer(
         }),
         updated_at: ctx.timestamp,
       });
+      const closed = ctx.db.query.id.find(q.id)!;
+      queueAnswerNotification(ctx,q,closed.answer_json!,'insufficient');
     }
     if (fresh) {
       ctx.db.evidence_job.id.update({ ...job, deadline_passed: true });
@@ -615,6 +620,11 @@ function ensureGcSchedule(ctx: Ctx): void {
 function collectGarbage(ctx: Ctx): void {
   const now = ctx.timestamp.microsSinceUnixEpoch;
   const cutoff = now - GC_KEEP_AFTER_EXPIRY_S * MICROS_PER_S;
+  for (const notification of [...ctx.db.answer_notification.iter()]) {
+    if (notification.created_at.microsSinceUnixEpoch < now - 2n * MICROS_PER_HOUR) {
+      ctx.db.answer_notification.key.delete(notification.key);
+    }
+  }
   for (const presence of ctx.db.user_presence.iter()) {
     if (presence.last_seen_at.microsSinceUnixEpoch < now - 120n * MICROS_PER_S) {
       ctx.db.user_presence.connection_id.delete(presence.connection_id);
@@ -631,6 +641,7 @@ function collectGarbage(ctx: Ctx): void {
 }
 
 export const init = spacetimedb.init((ctx) => {
+  ctx.db.module_owner.insert({id:0, identity:ctx.sender});
   ensureGcSchedule(ctx);
 });
 
@@ -670,5 +681,20 @@ export const worker_dev_wipe = spacetimedb.reducer({}, (ctx) => {
   for (const row of [...ctx.db.job_deadline_schedule.iter()]) ctx.db.job_deadline_schedule.scheduled_id.delete(row.scheduled_id);
   for (const row of [...ctx.db.prompt_expiry_schedule.iter()]) ctx.db.prompt_expiry_schedule.scheduled_id.delete(row.scheduled_id);
   for (const row of [...ctx.db.watch_expiry_schedule.iter()]) ctx.db.watch_expiry_schedule.scheduled_id.delete(row.scheduled_id);
+  for (const row of [...ctx.db.answer_notification.iter()]) ctx.db.answer_notification.key.delete(row.key);
   for (const key of [...ctx.db.rate_bucket.iter()].map((r) => r.key)) ctx.db.rate_bucket.key.delete(key);
 });
+
+export const worker_mark_answer_notification = spacetimedb.reducer(
+  {key:t.string(), outcome:t.string()}, (ctx,{key,outcome}) => {
+    requireService(ctx);
+    const row=ctx.db.answer_notification.key.find(key);
+    if (!row || row.state !== 'pending') return;
+    if (!['sent','retry','expired'].includes(outcome)) fail('Unknown notification outcome');
+    const attempts = Math.min(65535,row.attempts+1);
+    const delay = BigInt(Math.min(120,10 * 2 ** Math.min(attempts-1,4))) * MICROS_PER_S;
+    ctx.db.answer_notification.key.update({...row, attempts,
+      state:outcome === 'retry' ? 'pending' : outcome,
+      next_attempt_at:ts(ctx.timestamp.microsSinceUnixEpoch+delay)});
+  }
+);

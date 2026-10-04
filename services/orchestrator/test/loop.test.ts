@@ -227,7 +227,7 @@ describe("bug 2: the prompt a responder sees", () => {
 
     // Drop the first wave back in time so the next tick expands. jobLastWaveAt is
     // in-memory and also gates expansion, so clear it the way a restart would.
-    for (const r of conn.rows.svcPromptRecipient) r.notifiedAt = ts(NOW - 11_000);
+    for (const r of conn.rows.svcPromptRecipient) r.notifiedAt = ts(NOW - 31_000);
     resetLoopState();
     const batchesBefore = conn.rows.svcPromptBatch.length;
     await tick(asConn(conn));
@@ -770,7 +770,7 @@ describe("late answers (SPEC §7 step 9)", () => {
     await tick(asConn(conn));
     const batch = conn.rows.svcPromptBatch[0]!;
 
-    // Nobody answers before the 30 s demo deadline, so the query closes as insufficient.
+    // Nobody answers before the 60 s demo deadline, so the query closes as insufficient.
     const job = conn.rows.svcEvidenceJob[0]!;
     job.deadlineAt = ts(NOW - 1000);
     await tick(asConn(conn));
@@ -876,6 +876,36 @@ function addNeighbors(conn: FakeConn, place: { lat: number; lng: number }, n: nu
 
 const boostEvents = (conn: FakeConn, queryId: bigint) =>
   conn.rows.svcQueryEvent.filter((e) => e.queryId === queryId && e.message.startsWith("Priority boost"));
+
+describe("demo collection timing", () => {
+  it("allows 30 seconds for each wave before an insufficient result at 60 seconds", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
+    try {
+      const conn = makeFakeConn(NOW);
+      const place = addPlace(conn);
+      const asker = addUser(conn, "timing-asker", {lat:42.30, lng:-83.70});
+      addNeighbors(conn, place, 20);
+      vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+      const q = addQuery(conn, asker, place.id, "Is Shapiro quiet?");
+      await tick(asConn(conn));
+      const job = conn.rows.svcEvidenceJob[0]!;
+      expect(Number(job.deadlineAt.microsSinceUnixEpoch / 1000n)).toBe(NOW + 60_000);
+      expect(conn.rows.svcPromptRecipient).toHaveLength(10);
+      clock.mockReturnValue(NOW + 29_000);
+      await tick(asConn(conn));
+      expect(conn.rows.svcPromptRecipient).toHaveLength(10);
+      clock.mockReturnValue(NOW + 30_000);
+      await tick(asConn(conn));
+      expect(conn.rows.svcPromptRecipient).toHaveLength(20);
+      clock.mockReturnValue(NOW + 59_000);
+      await tick(asConn(conn));
+      expect(q.status).toBe("collecting");
+      clock.mockReturnValue(NOW + 60_000);
+      await tick(asConn(conn));
+      expect(q.status).toBe("insufficient");
+    } finally { clock.mockRestore(); }
+  });
+});
 
 describe("reciprocal priority (SPEC §7)", () => {
   beforeEach(() => {
@@ -1189,4 +1219,22 @@ describe("foreground reachability", () => {
     await tick(asConn(c));
     expect(c.rows.svcPromptRecipient.some(r=>r.responder.isEqual(responder))).toBe(false);
   });
+});
+
+
+it("delivers a persisted insufficient-answer notification after a worker restart without duplicate pushes", async () => {
+  const c=makeFakeConn(NOW), place=addPlace(c), asker=addUser(c,"queue_asker",{lat:42.3,lng:-83.7});
+  const q=addQuery(c,asker,place.id,"Is it quiet?");
+  q.status="insufficient"; q.answerJson=JSON.stringify({headline:"Not enough fresh evidence",sourceCount:0});
+  c.rows.svcAnswerNotification.push({key:`${q.id}:deadline`,queryId:q.id,owner:asker,title:"Not enough fresh reports",
+    body:"Nobody answered in time",url:`/#/q/${q.id}`,tag:`answer-${q.id}`,state:"pending",attempts:0,
+    nextAttemptAt:ts(NOW),createdAt:ts(NOW),svc:0});
+  vi.mocked(pushEnabled).mockReturnValue(true); vi.mocked(sendPush).mockClear().mockResolvedValue("sent");
+  try {
+    resetLoopState(); await tick(asConn(c));
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    expect(c.rows.svcAnswerNotification[0].state).toBe("sent");
+    resetLoopState(); await tick(asConn(c));
+    expect(sendPush).toHaveBeenCalledTimes(1);
+  } finally {vi.mocked(pushEnabled).mockReturnValue(false);}
 });

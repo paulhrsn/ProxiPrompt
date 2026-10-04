@@ -81,6 +81,10 @@ export interface CommentRow { id: bigint; postId: bigint; author: Identity; attr
 export interface UserLocationRow { identity: Identity; lat: number; lng: number; accuracyM: number; source: string; claimedPlaceId?: string; capturedAt: Timestamp; svc: number }
 export interface UserProfileRow { identity: Identity; username: string; avatarSeed: string; defaultAttribution: string; notificationsPaused: boolean; isAdmin: boolean; createdAt: Timestamp; svc: number }
 export interface DeviceRow { id: bigint; owner: Identity; endpoint: string; p256Dh: string; auth: string; userAgent: string; active: boolean; createdAt: Timestamp; svc: number }
+export interface AnswerNotificationRow {
+  key:string; queryId:bigint; owner:Identity; title:string; body:string; url:string; tag:string;
+  state:string; attempts:number; nextAttemptAt:Timestamp; createdAt:Timestamp; svc:number;
+}
 export interface ImpactEventRow { id: bigint; contributor: Identity; sourceType: string; sourceId: string; queryId: bigint; kind: string; createdAt: Timestamp; dedupKey: string; svc: number }
 export interface WatchRow {
   id: bigint; owner: Identity; placeId: string; text: string; status: string;
@@ -105,6 +109,7 @@ interface Tables {
   svcDevice: DeviceRow[];
   svcImpactEvent: ImpactEventRow[];
   svcWatch: WatchRow[];
+  svcAnswerNotification: AnswerNotificationRow[];
 }
 
 /** A rejection from a reducer. The real module throws SenderError; the shape does not matter to loop.ts. */
@@ -136,7 +141,7 @@ export function makeFakeConn(now: number): FakeConn {
     place: [], svcQuery: [], svcQueryEvent: [], svcEvidenceJob: [], svcPromptBatch: [],
     svcPromptRecipient: [], svcPromptResponse: [], svcObservation: [], svcPost: [],
     svcComment: [], svcUserLocation: [], svcUserPresence: [], svcUserProfile: [], svcDevice: [], svcImpactEvent: [],
-    svcWatch: [],
+    svcWatch: [], svcAnswerNotification: [],
   };
   const calls: { name: string; args: unknown }[] = [];
   const failures = new Set<string>();
@@ -219,9 +224,27 @@ export function makeFakeConn(now: number): FakeConn {
     }
     const q = findQuery(a.queryId);
     transitionQuery(q, a.status);
+    const changed=q.status!==a.status || q.answerJson!==a.answerJson;
+    const previous=q.status;
     q.status = a.status;
     q.answerJson = a.answerJson;
     q.updatedAt = stamp();
+    const key=`${q.id}:${q.updatedAt.microsSinceUnixEpoch}`;
+    if (changed && !rows.svcAnswerNotification.some(n=>n.key===key)) {
+      const answer=JSON.parse(a.answerJson);
+      rows.svcAnswerNotification.push({key,queryId:q.id,owner:q.requester,
+        title:previous === 'answered' ? `Updated answer: ${answer.headline}` : answer.headline ?? 'Your answer is ready',
+        body:a.status==='insufficient' ? 'Nobody nearby answered in time' : `${answer.confidence?.level ?? 'Low'} confidence`,
+        url:`/#/q/${q.id}`,tag:`answer-${q.id}`,state:'pending',attempts:0,nextAttemptAt:stamp(),createdAt:stamp(),svc:0});
+    }
+  });
+
+  define<{key:string;outcome:string}>("workerMarkAnswerNotification",a=>{
+    const row=rows.svcAnswerNotification.find(n=>n.key===a.key);
+    if (!row || row.state!=='pending') return;
+    if (!['sent','retry','expired'].includes(a.outcome)) throw new ReducerError('Unknown notification outcome');
+    row.attempts++; row.state=a.outcome==='retry' ? 'pending' : a.outcome;
+    row.nextAttemptAt=ts(conn.now+Math.min(120000,10000*2**Math.min(row.attempts-1,4)));
   });
 
   // ---------- evidence jobs ----------
@@ -434,6 +457,7 @@ export function makeFakeConn(now: number): FakeConn {
     svcObservation: { iter: () => rows.svcObservation },
     svcPost: { iter: () => rows.svcPost },
     svcComment: { iter: () => rows.svcComment },
+    svcAnswerNotification: {iter:()=>rows.svcAnswerNotification},
     svcUserLocation: { iter: () => rows.svcUserLocation },
     svcUserPresence: { iter: () => rows.svcUserPresence },
     svcUserProfile: { iter: () => rows.svcUserProfile },

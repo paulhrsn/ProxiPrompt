@@ -19,8 +19,8 @@ export function getConfig(demoMode: boolean): CoreConfig {
     ? {
         FIRST_WAVE: 10,
         MAX_RECIPIENTS: 20,
-        EXPAND_AFTER_S: 10,
-        JOB_DEADLINE_S: 30,
+        EXPAND_AFTER_S: 30,
+        JOB_DEADLINE_S: 60,
         LATE_ACCEPT_S: 120,
         RESPONDER_COOLDOWN_S: 60,
         PROMPT_EXPIRY_S: 600,

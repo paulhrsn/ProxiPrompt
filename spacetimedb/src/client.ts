@@ -509,11 +509,24 @@ export const cancel_watch = spacetimedb.reducer({ watch_id: t.u64() }, (ctx, { w
 });
 
 // ---------- service role bootstrap ----------
-// Deploy step: right after publishing, the worker connects with its own persistent token and calls
-// claim_service_role once. After that only an existing service identity can add more (add_service_identity).
+// On new/reset DBs only the publisher recorded by init may bootstrap the service role.
+// Non-destructive updates retain an existing role; no caller can claim it again.
+function requireModuleOwner(ctx: any) {
+  const owner = ctx.db.module_owner.id.find(0);
+  if (!owner || !owner.identity.isEqual(ctx.sender)) fail('Only the recorded module owner may bootstrap service identities');
+}
+
 export const claim_service_role = spacetimedb.reducer((ctx) => {
   if (ctx.db.service_role.count() > 0n) fail('Service role has already been claimed');
+  requireModuleOwner(ctx);
   ctx.db.service_role.insert({ identity: ctx.sender, created_at: ctx.timestamp, svc: 0 });
+});
+
+export const grant_service_role = spacetimedb.reducer({ identity:t.identity() }, (ctx, {identity}) => {
+  requireModuleOwner(ctx);
+  if (!ctx.db.service_role.identity.find(identity)) {
+    ctx.db.service_role.insert({identity, created_at:ctx.timestamp, svc:0});
+  }
 });
 
 export const add_service_identity = spacetimedb.reducer({ identity: t.identity() }, (ctx, { identity }) => {

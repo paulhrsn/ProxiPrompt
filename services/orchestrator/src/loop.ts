@@ -173,6 +173,7 @@ export async function tick(conn: Conn): Promise<void> {
     ["advanceCollectingJobs", () => advanceCollectingJobs(conn, cfg, now)],
     ["updateLateAnswers", () => updateLateAnswers(conn, cfg, now)],
     ["evaluateWatches", () => evaluateWatches(conn, now)],
+    ["deliverAnswerNotifications", () => deliverAnswerNotifications(conn, now)],
   ];
   for (const [name, run] of stages) {
     const t0 = Date.now();
@@ -865,7 +866,7 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
 
 /**
  * SPEC §7 step 9. A response can arrive after the job deadline — in demo mode the deadline
- * is 30 s while prompts stay open for 600 s — and `ingestResponses` already turns it into
+ * is 60 s while prompts stay open for 600 s — and `ingestResponses` already turns it into
  * an observation. Without this pass that evidence never reaches the person who asked: they
  * are left on "not enough fresh evidence" while the answer sits in the database.
  *
@@ -1044,19 +1045,6 @@ async function synthesizeQuery(
     }
   }
 
-  const requester = hexOf(q.requester);
-  const device = rows(conn.db.svcDevice.iter()).find((d) => hexOf(d.owner) === requester && d.active);
-  if (device && pushEnabled()) {
-    await sendToDevice(
-      conn, device,
-      {
-        title: mode === "update" ? `Updated answer: ${synth.headline}` : synth.headline,
-        body: `${score.level} confidence · ${sourceCount} source${sourceCount === 1 ? "" : "s"}`,
-        url: `/#/q/${queryId}`,
-        tag: `answer-${queryId}`,
-      },
-    );
-  }
 }
 
 async function evaluateWatches(conn: Conn, now: number) {
@@ -1131,6 +1119,27 @@ async function evaluateWatches(conn: Conn, now: number) {
         },
       );
     }
+  }
+}
+
+// Delivery receipts are in the DB so restarting a worker does not forget pending or sent alerts.
+async function deliverAnswerNotifications(conn: Conn, now: number) {
+  for (const notification of rows(conn.db.svcAnswerNotification.iter())) {
+    if (notification.state !== "pending" || toMs(notification.nextAttemptAt) > now) continue;
+    if (now - toMs(notification.createdAt) > 600000) {
+      await conn.reducers.workerMarkAnswerNotification({key:notification.key,outcome:"expired"});
+      continue;
+    }
+    if (!pushEnabled()) continue;
+    const devices=rows(conn.db.svcDevice.iter()).filter(d=>d.active && d.owner.isEqual(notification.owner));
+    if (!devices.length) continue;
+    let sent=false;
+    for (const device of devices) {
+      const result=await sendToDevice(conn,device,{title:notification.title,body:notification.body,
+        url:notification.url,tag:notification.tag});
+      if (result === "sent") sent=true;
+    }
+    await conn.reducers.workerMarkAnswerNotification({key:notification.key,outcome:sent ? "sent" : "retry"});
   }
 }
 
