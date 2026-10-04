@@ -9,7 +9,8 @@
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r --if-present build",
-    "e2e:browser": "bash scripts/e2e-browser.sh"
+    "e2e:browser": "bash scripts/e2e-browser.sh",
+    "demo:neighbors": "pnpm --filter @proxiprompt/orchestrator exec tsx scripts/demo-neighbors.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0"
