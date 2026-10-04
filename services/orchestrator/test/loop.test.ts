@@ -108,6 +108,7 @@ function addObservation(
     contributor?: ReturnType<typeof identityFor>;
     sourceType?: string;
     value?: string;
+    valueLabel?: string;
     ordinal?: number;
     ageMs?: number;
     ttlS?: number;
@@ -122,7 +123,7 @@ function addObservation(
     placeId: over.placeId ?? "shapiro-undergraduate-library",
     dimension: over.dimension,
     value: over.value ?? "mid",
-    valueLabel: "Moderate",
+    valueLabel: over.valueLabel ?? "Moderate",
     ordinal: over.ordinal ?? 1,
     kind: "objective",
     sourceType: over.sourceType ?? "response",
@@ -1046,3 +1047,26 @@ describe("the fake connection still matches the real module", () => {
 
 // Kept to show the unused import is intentional: tsMicros is part of the fake's public surface.
 void tsMicros;
+
+describe("an answer admits when its own sources disagree", () => {
+  it("caps confidence, adds a 'Reports disagree' caveat, and keeps the conflict in the answer", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker", { lat: 42.30, lng: -83.70 });
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    for (const u of ["u1", "u2", "u3"]) {
+      addObservation(conn, { dimension: "noise_level", contributor: identityFor(u), value: "high", valueLabel: "High", ordinal: 2 });
+    }
+    addObservation(conn, { dimension: "noise_level", contributor: identityFor("u4"), value: "low", valueLabel: "Low", ordinal: 0 });
+
+    const q = addQuery(conn, asker, place.id, "How loud is Shapiro?");
+    await tick(asConn(conn));
+
+    const sent = vi.mocked(callSynthesize).mock.calls.at(-1)![0] as { confidence: { level: string } };
+    expect(sent.confidence.level).toBe("Medium");
+    const answer = JSON.parse(conn.rows.svcQuery.find((r) => r.id === q.id)!.answerJson!);
+    expect(answer.confidence.level).toBe("Medium");
+    expect(answer.conflicts).toEqual([{ dimension: "noise_level", severity: "moderate", labels: ["Low", "High"] }]);
+    expect(answer.caveats.some((c: string) => c.startsWith("Reports disagree"))).toBe(true);
+  });
+});

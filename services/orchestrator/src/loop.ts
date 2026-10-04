@@ -874,6 +874,15 @@ async function updateLateAnswers(conn: Conn, cfg: ReturnType<typeof getConfig>, 
   }
 }
 
+/** Surfaces fresh firsthand disagreement in the caveats, since confidence alone hides why it is capped. */
+function withConflictCaveat(caveats: string[], conflicts: ReturnType<typeof scoreEvidence>["conflicts"]): string[] {
+  if (!conflicts.length) return caveats;
+  const what = conflicts
+    .map((c) => `${c.dimension.replace(/^other:/, "").replace(/_/g, " ")} (${c.labels.join(" vs ")})`)
+    .join("; ");
+  return [`Reports disagree on ${what}; confidence is capped.`, ...caveats];
+}
+
 async function synthesizeQuery(
   conn: Conn,
   queryId: bigint,
@@ -934,7 +943,9 @@ async function synthesizeQuery(
     status,
     answerJson: JSON.stringify({
       ...synth,
+      caveats: withConflictCaveat(synth.caveats, score.conflicts),
       confidence: { score: score.score, level: score.level, ceiling: score.ceiling },
+      conflicts: score.conflicts,
       sourceCount,
       updatedAtMs: newest || nowMs(),
       cacheHit,
