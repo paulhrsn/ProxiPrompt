@@ -1,7 +1,8 @@
 /**
  * Watch a place in a real browser against the test stack (see scripts/e2e-browser.sh).
  */
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 const SHAPIRO = "Shapiro Undergraduate Library";
 
@@ -28,7 +29,7 @@ test("notify me when seats open, then the watch reports it", async ({ browser })
     await onboard(asker, `w${tag}`);
     await onboard(near, `r${tag}`);
     await near.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "You" }).click();
-    await near.getByLabel("Location").selectOption({ label: SHAPIRO });
+    await near.getByLabel("Location", { exact: true }).selectOption({ label: SHAPIRO });
     await expect(near.getByTestId("demo-location")).toHaveText("Simulated location");
 
     await asker.getByLabel("Question").fill("Tell me when seats open up");

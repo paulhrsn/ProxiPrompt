@@ -3,7 +3,8 @@
  * `pnpm e2e:browser` starts that stack on proxiprompt-test. Do not point this
  * at :5173: that app uses the live proxiprompt database.
  */
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 const SHAPIRO = "Shapiro Undergraduate Library";
 const UNION = "Michigan Union";
@@ -34,7 +35,7 @@ async function onboard(page: Page, username: string) {
 
 async function setDemo(page: Page, placeName: string) {
   await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "You" }).click();
-  await page.getByLabel("Location").selectOption({ label: placeName });
+  await page.getByLabel("Location", { exact: true }).selectOption({ label: placeName });
   await expect(page.getByTestId("demo-location")).toHaveText("Simulated location");
 }
 

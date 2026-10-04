@@ -22,6 +22,7 @@ export VITE_SPACETIMEDB_DB=proxiprompt-test
 export VITE_SPACETIMEDB_URI="${SPACETIMEDB_URI}"
 export VITE_ORCH_URL="http://127.0.0.1:${ORCH_PORT}"
 export E2E_WEB_URL="http://127.0.0.1:${WEB_PORT}"
+export E2E_ORCH_URL="http://127.0.0.1:${ORCH_PORT}"
 
 if [[ "$SPACETIMEDB_DB" == "proxiprompt" ]]; then
   echo "Refusing to run browser e2e against the live proxiprompt database."
