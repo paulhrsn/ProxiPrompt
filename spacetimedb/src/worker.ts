@@ -192,7 +192,7 @@ export const job_deadline_reached = spacetimedb.reducer(
           recommendation: 'insufficient',
           summary: 'Nobody nearby answered in time, and cached reports were too old or missing.',
           supporting: [],
-          caveats: ['Try again shortly — a later answer will use any late responses.'],
+          caveats: ['Try again shortly: a later answer will use any late responses.'],
           planner,
           confidence: { score: 0, level: 'Low', ceiling: 0 },
         }),

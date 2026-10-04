@@ -96,7 +96,7 @@ async def test_canned_option_sets(shapiro):
     seat = planner.build_control("seating_availability")
     assert [o.label for o in seat.options] == ["None", "A few", "Some", "Plenty"]
     assert [o.label for o in planner.build_control("noise_level").options] == ["Quiet", "Moderate", "Loud"]
-    assert [o.label for o in planner.build_control("wait_time").options] == ["None", "<5 min", "5–15 min", "15+ min"]
+    assert [o.label for o in planner.build_control("wait_time").options] == ["None", "<5 min", "5-15 min", "15+ min"]
     assert [o.label for o in planner.build_control("crowd_level").options] == ["Empty", "Light", "Busy", "Packed"]
 
 

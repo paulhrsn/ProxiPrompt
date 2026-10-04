@@ -12,6 +12,8 @@ export interface AsiRecord {
   headline?: string;
   confidence?: string;
   sources?: string;
+  recommendation?: string;
+  freshest_age_s?: number;
   message?: string;
   progress?: string;
 }
@@ -163,12 +165,20 @@ export function startAsiServer(
               .filter((e) => e.queryId === q.id)
               .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0]?.message;
             if (q.answerJson) {
-              const ans = parseJson<{ headline?: string; confidence?: { level?: string }; sourceCount?: number }>(
-                q.answerJson,
-                {},
-              );
+              const ans = parseJson<{
+                headline?: string;
+                recommendation?: string;
+                confidence?: { level?: string };
+                sourceCount?: number;
+                updatedAtMs?: number;
+              }>(q.answerJson, {});
               rec.headline = ans.headline;
               rec.confidence = ans.confidence?.level;
+              if (ans.recommendation) rec.recommendation = ans.recommendation;
+              // updatedAtMs is the newest firsthand observation the answer used.
+              if (typeof ans.updatedAtMs === "number") {
+                rec.freshest_age_s = Math.max(0, Math.round((Date.now() - ans.updatedAtMs) / 1000));
+              }
               if (typeof ans.sourceCount === "number") {
                 rec.sources = `${ans.sourceCount} recent nearby report${ans.sourceCount === 1 ? "" : "s"}`;
               }

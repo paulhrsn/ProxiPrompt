@@ -7,7 +7,7 @@ export function initPush(): boolean {
   const priv = process.env.VAPID_PRIVATE_KEY?.trim();
   const subject = process.env.VAPID_SUBJECT?.trim() || "mailto:team@proxiprompt.local";
   if (!pub || !priv) {
-    console.warn("VAPID keys missing — push notifications disabled");
+    console.warn("VAPID keys missing, push notifications disabled");
     configured = false;
     return false;
   }

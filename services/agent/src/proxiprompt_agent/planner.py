@@ -48,7 +48,7 @@ logger = logging.getLogger("proxiprompt.planner")
 CONTROL_TEMPLATES: dict[str, tuple[str, list[tuple[str, str, int]]]] = {
     "seating_availability": ("Open seats", [("none", "None", 0), ("few", "A few", 1), ("some", "Some", 2), ("plenty", "Plenty", 3)]),
     "crowd_level": ("How busy", [("empty", "Empty", 0), ("light", "Light", 1), ("busy", "Busy", 2), ("packed", "Packed", 3)]),
-    "wait_time": ("Wait time", [("none", "None", 0), ("lt5", "<5 min", 1), ("5to15", "5–15 min", 2), ("15plus", "15+ min", 3)]),
+    "wait_time": ("Wait time", [("none", "None", 0), ("lt5", "<5 min", 1), ("5to15", "5-15 min", 2), ("15plus", "15+ min", 3)]),
     "line_length": ("Line length", [("none", "No line", 0), ("short", "Short", 1), ("medium", "Medium", 2), ("long", "Long", 3)]),
     "noise_level": ("Noise level", [("quiet", "Quiet", 0), ("moderate", "Moderate", 1), ("loud", "Loud", 2)]),
     "equipment_availability": ("Equipment free", [("none", "None free", 0), ("few", "One or two", 1), ("several", "Several", 2), ("plenty", "Plenty", 3)]),
@@ -536,7 +536,7 @@ async def plan(req: PlanRequest) -> PlanResponse:
 _VALENCE: dict[str, dict[str, int]] = {
     "seating_availability": {"none": -1, "a few": 0, "some": 0, "plenty": 1},
     "crowd_level": {"empty": 1, "light": 1, "busy": -1, "packed": -1},
-    "wait_time": {"none": 1, "<5 min": 1, "5–15 min": 0, "5-15 min": 0, "15+ min": -1},
+    "wait_time": {"none": 1, "<5 min": 1, "5-15 min": 0, "15+ min": -1},
     "line_length": {"no line": 1, "none": 1, "short": 1, "medium": 0, "long": -1},
     "noise_level": {"quiet": 1, "moderate": 0, "loud": -1},
     "equipment_availability": {"none free": -1, "one or two": 0, "several": 1, "plenty": 1},
@@ -626,7 +626,7 @@ def synthesize_heuristic(req: SynthesizeRequest) -> SynthesizeResponse:
         body = ", ".join(parts[:-1]) + " and " + parts[-1]
     headline = f"{req.place.name}: reports say {body}."
     if freeform_only:
-        headline = f"{body} — according to {len(req.evidence)} report{'s' if len(req.evidence) != 1 else ''} from {req.place.name}."
+        headline = f"{body}, according to {len(req.evidence)} report{'s' if len(req.evidence) != 1 else ''} from {req.place.name}."
     elif not objective_parts and subjective_parts:
         headline = f"{req.place.name}: {body} (opinion, not a measurement)."
 
