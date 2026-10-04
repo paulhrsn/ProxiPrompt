@@ -86,4 +86,10 @@ describe("POST /dev/wipe", () => {
       expect(res.headers.get("access-control-allow-headers") ?? "").not.toMatch(/x-proxiprompt-dev/i);
     });
   });
+
+  it("listens on loopback only unless ORCH_HOST says otherwise", async () => {
+    // /asi/query submits as the service identity; on 0.0.0.0 anyone on the network could use it.
+    await start(null);
+    expect((server!.address() as AddressInfo).address).toBe("127.0.0.1");
+  });
 });

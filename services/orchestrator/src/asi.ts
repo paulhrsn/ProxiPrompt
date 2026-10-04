@@ -178,6 +178,10 @@ export function startAsiServer(
       json(res, 500, { error: (e as Error).message });
     }
   });
-  server.listen(port, "0.0.0.0", () => console.log(`orchestrator http :${port}`));
+  // Loopback by default: /asi/query submits as the service identity, so on 0.0.0.0 anyone who
+  // can reach this machine could ask questions without an account. Phones reach /places and
+  // /dev through the Vite proxy, which runs here. A hosted deploy sets ORCH_HOST=0.0.0.0.
+  const host = process.env.ORCH_HOST?.trim() || "127.0.0.1";
+  server.listen(port, host, () => console.log(`orchestrator http ${host}:${port}`));
   return server;
 }
