@@ -717,6 +717,23 @@ function CommentBox({ conn, postId }: { conn: Conn; postId: bigint }) {
   );
 }
 
+function Countdown({ start, end, label, expand }: { start: number; end: number; label: string; expand?: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [start, end]);
+  const firstWave = expand !== undefined && now < expand;
+  const phaseEnd = firstWave ? expand : end;
+  const phaseStart = expand !== undefined && !firstWave ? expand : start;
+  const remaining = Math.max(0, Math.ceil((phaseEnd - now) / 1000));
+  const phaseLabel = expand !== undefined ? (firstWave ? "First response window" : "Final response window") : label;
+  const progress = Math.min(100, Math.max(0, (now - phaseStart) / Math.max(1, phaseEnd - phaseStart) * 100));
+  return <div className="countdown"><div className="countdown-label"><span>{phaseLabel}</span><span>{remaining ? `${remaining}s left` : "Finishing up…"}</span></div>
+    <progress aria-label={phaseLabel} max={100} value={progress} /></div>;
+}
+
 function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>; id: string }) {
   const q = list(conn.db.myQueries.iter()).find((row) => String(row.id) === id);
   const events = list(conn.db.myQueryEvents.iter()).filter((e) => String(e.queryId) === id).sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt));
@@ -740,6 +757,12 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
     conflicts?: { dimension: string; severity: string; labels: string[] }[];
   } : null;
   const now=Date.now();
+  const timerEvent = events.filter(e => e.kind === "collection_timer").at(-1);
+  let timer: { start: number; end: number; expand: number } | null = null;
+  try { timer = timerEvent ? JSON.parse(timerEvent.message) : null; } catch { /* Ignore malformed metadata. */ }
+  const latestPending = events.filter(e => e.kind === "pending").at(-1);
+  const timeline = events.filter(e => e.kind !== "collection_timer" &&
+    (e.kind !== "pending" || e === latestPending) && !(e.kind === "waiting" && latestPending && toMs(e.createdAt) <= toMs(latestPending.createdAt)));
   const recentPosts=!refused ? list(conn.db.pulsePosts.iter())
     .filter(p=>p.placeId===q.placeId)
     .filter(p=>{
@@ -772,9 +795,10 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
       ) : null}
       {!ans && !refused && (
         <ul className="timeline">
-          {events.map((e) => <li key={String(e.id)} className={e === events.at(-1) ? "now" : ""}>{e.message}</li>)}
+          {timeline.map((e) => <li key={String(e.id)} className={e === timeline.at(-1) ? "now" : ""}>{e.message}</li>)}
         </ul>
       )}
+      {!ans && q.status === "collecting" && timer ? <Countdown start={timer.start} end={timer.end} expand={timer.expand} label="Collecting nearby updates" /> : null}
       {q.status === "clarifying" && clar && (
         <div className="card">
           <h2>{clar.question}</h2>
@@ -901,6 +925,8 @@ type PromptRow = {
   question: string;
   controlsJson: string;
   responded: boolean;
+  expiresAt: { microsSinceUnixEpoch: bigint };
+  createdAt: { microsSinceUnixEpoch: bigint };
 };
 
 function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
@@ -1032,6 +1058,7 @@ function AnswerForm({
     <div className="answer-form" aria-busy={sending}>
       <p className="answer-place">{prompt.placeName}</p>
       <h2>{prompt.question}</h2>
+      <Countdown start={toMs(prompt.createdAt)} end={toMs(prompt.expiresAt)} label="Time to respond" />
       {visible.map((c) => (
         <fieldset disabled={sending} className="choice-set" key={c.dimension_key}>
           {c.label && c.dimension_key !== "other:answer" ? <legend>{c.label}</legend> : null}

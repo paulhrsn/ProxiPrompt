@@ -778,3 +778,13 @@ html { scrollbar-color: var(--line) var(--bg); }
 .card, .place-preview, .status { box-shadow: 0 6px 24px #00000012; }
 .tabbar { box-shadow: 0 -8px 32px #00000024; }
 .switch:not(.off)::after { background: var(--on-accent); }
+
+.recent-query-updates > .hint { margin-bottom: 24px; }
+.recent-query-updates .card { margin-top: 16px; }
+.recent-query-updates .meta { margin-bottom: 12px; }
+.countdown { margin: 20px 0 28px; }
+.countdown-label { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+.countdown progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 999px; overflow: hidden; background: var(--line); color: var(--accent); }
+.countdown progress::-webkit-progress-bar { background: var(--line); }
+.countdown progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.countdown progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }

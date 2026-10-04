@@ -404,3 +404,11 @@ At the user's request, wrapped the correctness work for the demo rather than ext
 Final evidence: core 138 passed, worker 100 passed, agent 190 passed, workspace typechecks/build passed, local DB and MainCloud DB guardrails each 74 passed. Final focused browser checks: local 2/2, MainCloud 5/5 including canonical responders/cache, same-name onboarding/recent posts, reconnect, presence and push account switch. Historical privacy migration passed on both local and MainCloud test, verifying an ordinary requester cannot read identities from unchanged historical answer storage.
 
 Live MainCloud module was updated non-destructively; profile identities and query keys were preserved across publish. A temporary worker confirmed authorized subscription readiness against live MainCloud and was stopped. The user's current local demo remains running on :5173 with worker :8080 and ASI-configured agent :8001 reporting connected. Use demo sessions for the timed demo; real email logout/login restoration and physical iPhone push have not been manually verified. Detailed item-by-item evidence is in AUDIT_FIXES.md.
+
+### Demo follow-up: pending responses, timers, commands (2026-10-04)
+
+- Waiting status counts only unanswered, unexpired prompt recipients; answered/declined recipients no longer count as pending. Latest pending status replaces stale waiting status in the query timeline.
+- Collection timer metadata uses the evidence job's actual creation/deadline timestamps and configured expansion interval. Query screen shows first/final response-window progress; responder form shows actual prompt-expiry progress.
+- Added spacing between immediate recent-post context, post metadata, and body.
+- Added COMMANDS.md covering local startup, ngrok port 80, stop/restart, optional MainCloud, and phone setup.
+- Web production build and web/orchestrator TypeScript checks passed. No automated tests or physical-device rehearsal performed for this follow-up. Restart pnpm dev and refresh devices to activate worker changes.

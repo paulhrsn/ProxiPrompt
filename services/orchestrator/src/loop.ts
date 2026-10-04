@@ -649,9 +649,9 @@ async function promptWave(
         conn,
         q.id,
         "waiting",
-        existing.length > 0
-          ? "No one else nearby to ask; waiting on the people already asked"
-          : "No one nearby is available to ask right now",
+        existing.some(r => !r.responded && rows(conn.db.svcPromptBatch.iter()).some(b => b.id === r.batchId && !b.expired && toMs(b.expiresAt) > now))
+          ? "No one else nearby to ask; waiting for pending responses"
+          : existing.length ? "No pending responses; looking for more nearby people" : "No one nearby is available to ask right now",
       );
     }
     return;
@@ -786,6 +786,21 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
     });
     const recips = rows(conn.db.svcPromptRecipient.iter()).filter((r) => r.jobId === job.id);
     const answered = recips.filter((r) => r.responded).length;
+    const pending = recips.filter(r => !r.responded && rows(conn.db.svcPromptBatch.iter())
+      .some(b => b.id === r.batchId && !b.expired && toMs(b.expiresAt) > now)).length;
+    for (const q of attached) {
+      const timers = JSON.stringify({ start: toMs(job.createdAt), end: toMs(job.deadlineAt),
+        expand: toMs(job.createdAt) + cfg.EXPAND_AFTER_S * 1000 });
+      if (!rows(conn.db.svcQueryEvent.iter()).some(e => e.queryId === q.id && e.kind === "collection_timer" && e.message === timers))
+        await event(conn, q.id, "collection_timer", timers);
+      const message = pending ? `Waiting for ${pending} pending response${pending === 1 ? "" : "s"}`
+        : recips.length ? "No pending responses; checking the evidence collected" : "Looking for nearby people to ask";
+      const key = `${q.id}:pending`;
+      if (lastReceivedEvent.get(key) !== message) {
+        lastReceivedEvent.set(key, message);
+        await event(conn, q.id, "pending", message);
+      }
+    }
     for (const q of attached) {
       if (!answered) continue;
       // recips.length is how many people were actually asked; plan.responder_count is only
