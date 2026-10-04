@@ -929,8 +929,12 @@ async function synthesizeQuery(
   // never asked about and anonymous social posts. score.contributors counts only firsthand
   // sources on the required dimensions, so this is the honest test for "we have an answer"
   // (SPEC §1.1: with no fresh evidence the result is explicitly insufficient).
+  // answered -> insufficient is not a legal transition, so a refreshed answer that has become
+  // unsure (for example after a late conflicting report) stays "answered" and says so in text.
   const status =
-    synth.recommendation === "insufficient" || score.contributors === 0 ? "insufficient" : "answered";
+    score.contributors === 0 || (synth.recommendation === "insufficient" && q.status !== "answered")
+      ? "insufficient"
+      : "answered";
   // scoreEvidence already counts distinct firsthand contributors on the required dimensions
   // and derives the confidence ceiling from that same number, so reuse it: a separate count
   // over every observation at the place contradicts the confidence level shown next to it.

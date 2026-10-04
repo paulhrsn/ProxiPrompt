@@ -1070,3 +1070,29 @@ describe("an answer admits when its own sources disagree", () => {
     expect(answer.caveats.some((c: string) => c.startsWith("Reports disagree"))).toBe(true);
   });
 });
+
+describe("a late conflicting report on an answered question", () => {
+  it("rewrites the answer even when the agent now calls it insufficient", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker", { lat: 42.30, lng: -83.70 });
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(conn, { dimension: "noise_level", contributor: identityFor("u1"), value: "high", valueLabel: "High", ordinal: 3 });
+
+    const q = addQuery(conn, asker, place.id, "How loud is Shapiro?");
+    await tick(asConn(conn));
+    expect(conn.rows.svcQuery.find((r) => r.id === q.id)!.status).toBe("answered");
+
+    // answered -> insufficient is not a legal transition, so the update must stay "answered".
+    vi.mocked(callSynthesize).mockResolvedValue({ ...SYNTH, recommendation: "insufficient" } as never);
+    addObservation(conn, { dimension: "noise_level", contributor: identityFor("u2"), value: "low", valueLabel: "Low", ordinal: 0 });
+    await tick(asConn(conn));
+    await tick(asConn(conn));
+
+    const row = conn.rows.svcQuery.find((r) => r.id === q.id)!;
+    expect(row.status).toBe("answered");
+    const answer = JSON.parse(row.answerJson!);
+    expect(answer.confidence.level).toBe("Low");
+    expect(answer.caveats[0]).toMatch(/^Reports disagree/);
+  });
+});

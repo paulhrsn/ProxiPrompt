@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
+import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, getDimension, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
 import { CLIENT_ID, emailOf, useDevMode, useOidc } from "./auth";
 import { clearLegacyToken, list, useDb } from "./spacetime";
 
@@ -716,7 +716,9 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
   const ans = !refused && q.answerJson ? JSON.parse(q.answerJson) as {
     headline: string; summary: string; supporting?: string[]; caveats?: string[];
     confidence?: { level?: string; score?: number; ceiling?: number };
-    sourceCount?: number; updatedAtMs?: number; cacheHit?: boolean; factors?: unknown; planner?: string;
+    sourceCount?: number; updatedAtMs?: number; cacheHit?: boolean; planner?: string;
+    factors?: { observations?: SourceFactor[] };
+    conflicts?: { dimension: string; severity: string; labels: string[] }[];
   } : null;
   return (
     <section>
@@ -777,7 +779,7 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
               {ans.caveats.map((line) => <li key={line}>{plain(line)}</li>)}
             </ul>
           ) : null}
-          {diag && <pre className="diag">{JSON.stringify({ planner: ans.planner, confidence: ans.confidence, factors: ans.factors }, null, 2)}</pre>}
+          {diag && <SourcesView ans={ans} />}
         </>
       )}
       <div className="footer-actions">
@@ -790,6 +792,51 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
       </div>
       <p className="hint">This question stays in Questions.</p>
     </section>
+  );
+}
+
+interface SourceFactor {
+  id: string; dimension: string; valueLabel?: string; sourceType?: string; verifiedNearby?: boolean;
+  ageS?: number; weight: number; contradicted: boolean;
+}
+
+const SOURCE_TYPE_LABEL: Record<string, string> = { response: "Response", post: "Post", comment: "Comment", social: "Social post" };
+
+function dimensionName(key: string): string {
+  return getDimension(key)?.label ?? "";
+}
+
+/** Plain-words view of what an answer rests on: each live report, then why confidence is what it is. */
+function SourcesView({ ans }: { ans: { confidence?: { level?: string }; sourceCount?: number; factors?: { observations?: SourceFactor[] }; conflicts?: { dimension: string; labels: string[] }[] } }) {
+  const live = (ans.factors?.observations ?? []).filter((o) => o.weight > 0).sort((a, b) => (a.ageS ?? 0) - (b.ageS ?? 0));
+  const unverified = live.filter((o) => o.sourceType !== "social" && !o.verifiedNearby).length;
+  const reasons: string[] = [];
+  for (const c of ans.conflicts ?? []) {
+    reasons.push(`Reports disagree${dimensionName(c.dimension) ? ` on ${dimensionName(c.dimension).toLowerCase()}` : ""} (${c.labels.join(" vs ")}), so confidence is held down.`);
+  }
+  if (ans.sourceCount === 1) reasons.push("Only one person reported this, so confidence stays limited.");
+  if (unverified) reasons.push(`${unverified} of ${live.length} report${live.length === 1 ? " was" : "s were"} not confirmed as coming from someone nearby.`);
+  if (live.some((o) => o.sourceType === "social")) reasons.push("Social posts add context but can't carry an answer alone.");
+  if (live.some((o) => o.contradicted)) reasons.push("A newer report contradicted an older one, so the older one counts for less.");
+  return (
+    <div className="sources-view" data-testid="sources-view">
+      <h2>Where this comes from</h2>
+      {live.length ? (
+        <ul>
+          {live.map((o) => (
+            <li key={o.id}>
+              <strong>{[dimensionName(o.dimension), o.valueLabel].filter(Boolean).join(": ") || "Report"}</strong>
+              <span>
+                {SOURCE_TYPE_LABEL[o.sourceType ?? ""] ?? "Report"} · {formatAge(o.ageS ?? 0)}
+                {o.sourceType === "social" ? "" : o.verifiedNearby ? " · Verified nearby" : " · Not verified nearby"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="hint">No live reports are behind this answer.</p>}
+      <h2>Why {ans.confidence?.level ?? "Low"} confidence</h2>
+      {reasons.length ? <ul className="reasons">{reasons.map((r) => <li key={r}>{r}</li>)}</ul> : <p className="hint">Several fresh, nearby reports agree.</p>}
+    </div>
   );
 }
 
