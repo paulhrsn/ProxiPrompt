@@ -32,7 +32,10 @@ import spacetimedb, {
 export const my_profile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(user_profile.rowType),
-  (ctx) => ctx.db.user_profile.identity.find(ctx.sender) ?? undefined
+  (ctx) => {
+    const p=ctx.db.user_profile.identity.find(ctx.sender);
+    return p ? {...p,username:ctx.db.demo_name.identity.find(ctx.sender)?.display_name??p.username} : undefined;
+  }
 );
 
 export const my_devices = spacetimedb.view({ name: 'my_devices', public: true }, t.array(device.rowType), (ctx) => [
@@ -175,7 +178,7 @@ export const pulse_posts = spacetimedb.anonymousView({ name: 'pulse_posts', publ
     out.push({
       id: p.id,
       attribution: prof ? 'profile' : 'anonymous',
-      author_label: prof ? prof.username : 'Anonymous',
+      author_label: prof ? ctx.db.demo_name.identity.find(prof.identity)?.display_name??prof.username : 'Anonymous',
       author_avatar_seed: prof ? prof.avatar_seed : undefined,
       place_id: p.place_id,
       community: p.community,
@@ -206,7 +209,7 @@ export const pulse_comments = spacetimedb.anonymousView(
         id: c.id,
         post_id: c.post_id,
         attribution: prof ? 'profile' : 'anonymous',
-        author_label: prof ? prof.username : 'Anonymous',
+        author_label: prof ? ctx.db.demo_name.identity.find(prof.identity)?.display_name??prof.username : 'Anonymous',
         author_avatar_seed: prof ? prof.avatar_seed : undefined,
         text: c.text,
         created_at: c.created_at,

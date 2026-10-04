@@ -24,6 +24,10 @@ export const user_profile = table(
 );
 
 // Foreground reachability is independent of when GPS last moved.
+export const demo_name = table({name:'demo_name'}, {
+  identity:t.identity().primaryKey(), display_name:t.string(),
+});
+
 export const user_presence = table(
   { name: 'user_presence' },
   {
@@ -359,6 +363,7 @@ export const service_role = table(
 );
 
 const spacetimedb = schema({
+  demo_name,
   user_presence,
   user_profile,
   device,

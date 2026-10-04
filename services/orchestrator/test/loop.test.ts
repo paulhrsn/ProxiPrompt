@@ -1197,6 +1197,53 @@ describe("audit reproductions", () => {
     expect(result.status).not.toBe("answered");
     expect(c.rows.svcObservation[0].invalidated).toBe(true);
   });
+  it("compares a late change against the persisted answer after a worker restart", async()=>{
+    const c=makeFakeConn(NOW), p=addPlace(c);
+    const a=addUser(c,"restart_asker",{lat:42.30,lng:-83.70});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"low",ordinal:0,ageMs:1000});
+    const q=addQuery(c,a,p.id,"Is Shapiro quiet?"); await tick(asConn(c));
+    const before=vi.mocked(callSynthesize).mock.calls.length;
+    resetLoopState(); await tick(asConn(c));
+    expect(callSynthesize).toHaveBeenCalledTimes(before);
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"high",ordinal:2});
+    resetLoopState(); await tick(asConn(c));
+    expect(callSynthesize).toHaveBeenCalledTimes(before+1);
+    expect(JSON.parse(q.answerJson!).dimensions[0].modalValue).toBe("high");
+    resetLoopState(); await tick(asConn(c));
+    expect(callSynthesize).toHaveBeenCalledTimes(before+1);
+  });
+  it("refreshes a finished answer when its last contribution is removed",async()=>{
+    const c=makeFakeConn(NOW), p=addPlace(c);
+    const a=addUser(c,"removal_asker",{lat:42.30,lng:-83.70});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1")});
+    const q=addQuery(c,a,p.id,"Is Shapiro quiet?"); await tick(asConn(c));
+    c.rows.svcObservation[0].invalidated=true;
+    vi.mocked(callSynthesize).mockResolvedValue({...SYNTH,recommendation:"insufficient",headline:"No fresh evidence remains"} as never);
+    resetLoopState(); await tick(asConn(c));
+    const answer=JSON.parse(q.answerJson!);
+    expect(answer.sourceCount).toBe(0);
+    expect(answer.dimensions[0].count).toBe(0);
+    expect(answer.recommendation).toBe("insufficient");
+    expect(answer.headline).toBe("No fresh evidence remains");
+  });
+  it("retries a late answer after its first replacement write fails",async()=>{
+    const c=makeFakeConn(NOW),p=addPlace(c);
+    const a=addUser(c,"write_asker",{lat:42.30,lng:-83.70});
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"low",ordinal:0,ageMs:1000});
+    const q=addQuery(c,a,p.id,"Is Shapiro quiet?"); await tick(asConn(c));
+    addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"high",ordinal:2});
+    const write=vi.spyOn(c.reducers,"workerSetAnswer").mockRejectedValueOnce(new Error("write interrupted"));
+    try {
+      await expect(tick(asConn(c))).rejects.toThrow("write interrupted");
+      expect(JSON.parse(q.answerJson!).dimensions[0].modalValue).toBe("low");
+      await tick(asConn(c));
+      expect(JSON.parse(q.answerJson!).dimensions[0].modalValue).toBe("high");
+      expect(write).toHaveBeenCalledTimes(2);
+    } finally {write.mockRestore();}
+  });
 });
 
 

@@ -177,6 +177,7 @@ function SignedOut() {
 }
 
 function Onboard({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
+  const {dev}=useDevMode();
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
   return (
@@ -190,8 +191,9 @@ function Onboard({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
       <button
         className="btn"
         onClick={async () => {
+          setErr("");
           try {
-            await conn.reducers.setProfile({
+            await (dev ? conn.reducers.setDemoProfile : conn.reducers.setProfile)({
               username: name.trim().toLowerCase(),
               defaultAttribution: "anonymous",
               avatarSeed: name.trim() || "seed",
@@ -737,6 +739,16 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
     factors?: { observations?: SourceFactor[] };
     conflicts?: { dimension: string; severity: string; labels: string[] }[];
   } : null;
+  const now=Date.now();
+  const recentPosts=!refused ? list(conn.db.pulsePosts.iter())
+    .filter(p=>p.placeId===q.placeId)
+    .filter(p=>{
+      const age=(now-toMs(p.createdAt))/1000;
+      try {
+        const claims=JSON.parse(p.claimsJson??'[]') as {proposed_ttl_s:number}[];
+        return claims.length ? claims.some(c=>age<c.proposed_ttl_s) : age<900;
+      } catch {return age<900;}
+    }).sort((a,b)=>toMs(b.createdAt)-toMs(a.createdAt)).slice(0,3) : [];
   return (
     <section>
       <div className="status">
@@ -745,6 +757,19 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
         {place?.name ? <p>{refused ? `${place.name} · ${q.text}` : place.name}</p> : null}
       </div>
       {watching ? <p className="watch-note" data-testid="watch-note">Watching this place too. If it changes, you will see it under Questions.</p> : null}
+      {recentPosts.length ? (
+        <section aria-label="Recent updates" className="recent-query-updates">
+          <h2>Recent updates</h2>
+          {OPEN_QUERY.has(q.status) ? <p className="hint">Here is what people have posted. We are checking your question with nearby people.</p> : null}
+          {recentPosts.map(p=>(
+            <article className="card" key={String(p.id)}>
+              <div className="meta"><span>Post{p.verifiedNearby?' · Confirmed nearby':''}</span><span>{formatAge((now-toMs(p.createdAt))/1000)}</span></div>
+              <p className="body">{p.text}</p>
+              {p.freshnessState==='mixed' ? <p className="hint">Reports disagree.</p> : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
       {!ans && !refused && (
         <ul className="timeline">
           {events.map((e) => <li key={String(e.id)} className={e === events.at(-1) ? "now" : ""}>{e.message}</li>)}
@@ -1251,7 +1276,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
             setSaving(true);
             setNameErr("");
             try {
-              await conn.reducers.setProfile({
+              await (dev ? conn.reducers.setDemoProfile : conn.reducers.setProfile)({
                 username: next,
                 defaultAttribution: profile?.defaultAttribution ?? "anonymous",
                 avatarSeed: profile?.avatarSeed || next,

@@ -470,7 +470,7 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
           intentKey: plan.intent_key,
           dimensionKeysJson: JSON.stringify(plan.dimensions.map((d) => d.key)),
           planJson: JSON.stringify(plan),
-          deadlineAtMicros: toMicros(now + cfg.JOB_DEADLINE_S * 1000),
+          deadlineAtMicros: toMicros(nowMs() + cfg.JOB_DEADLINE_S * 1000),
         });
         const created = rows(conn.db.svcEvidenceJob.iter()).find((j) => j.clientKey === clientKey);
         if (!created) throw new Error("job row did not appear");
@@ -507,7 +507,7 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
         await synthesizeQuery(conn, q.id, plan, place, obs, score, true);
       } else {
         await conn.reducers.workerSetQueryStatus({ queryId: q.id, status: "collecting" });
-        await promptWave(conn, jobId, plan, place, cfg, now, "first");
+        await promptWave(conn, jobId, plan, place, cfg, nowMs(), "first");
       }
       processedQueries.add(lock);
     } catch (e) {

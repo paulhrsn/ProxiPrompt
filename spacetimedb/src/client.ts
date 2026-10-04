@@ -78,6 +78,23 @@ export const set_profile = spacetimedb.reducer(
   }
 );
 
+// Demo names are display names. The private storage key stays unique per identity,
+// so two demo users can choose the same name without sharing an account or history.
+export const set_demo_profile = spacetimedb.reducer(
+  {username:t.string(),default_attribution:t.string(),avatar_seed:t.string()},
+  (ctx,{username,default_attribution,avatar_seed})=>{
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) fail('username must be 3-20 characters: lowercase letters, digits, underscore');
+    checkAttribution(default_attribution);
+    const seed=checkString('avatar_seed',avatar_seed,1,64);
+    const existing=ctx.db.user_profile.identity.find(ctx.sender);
+    const next={identity:ctx.sender,username:`~demo:${ctx.sender.toHexString()}`,avatar_seed:seed,default_attribution,
+      notifications_paused:existing?.notifications_paused??false,is_admin:existing?.is_admin??false,
+      created_at:existing?.created_at??ctx.timestamp,svc:0};
+    if (existing) ctx.db.user_profile.identity.update(next);else ctx.db.user_profile.insert(next);
+    const name={identity:ctx.sender,display_name:username};
+    if(ctx.db.demo_name.identity.find(ctx.sender))ctx.db.demo_name.identity.update(name);else ctx.db.demo_name.insert(name);
+  });
+
 export const set_notifications_paused = spacetimedb.reducer({ paused: t.bool() }, (ctx, { paused }) => {
   const p = requireProfile(ctx);
   ctx.db.user_profile.identity.update({ ...p, notifications_paused: paused });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Browser end-to-end of SPEC §14 against proxiprompt-test.
+# Browser end-to-end of SPEC §14 against a dedicated local or MainCloud test DB.
 # Starts a second orchestrator (:8081) and a second Vite (:5174). Reuses SpacetimeDB
 # on :3000 and the agent on :8001. Never publishes or writes the live proxiprompt database.
 set -euo pipefail
@@ -10,19 +10,31 @@ export PATH="${HOME}/.local/bin:${PATH}"
 
 export WEB_PORT=5174
 export ORCH_PORT=8081
-export SPACETIMEDB_DB=proxiprompt-test
+STDB_TARGET="${STDB_TARGET:-local}"
+case "$STDB_TARGET" in
+  local)
+    export SPACETIMEDB_DB=proxiprompt-test
+    export SPACETIMEDB_URI=ws://127.0.0.1:3000
+    ;;
+  maincloud)
+    export SPACETIMEDB_DB=proxiprompt-mhacks-test
+    export SPACETIMEDB_URI=wss://maincloud.spacetimedb.com
+    ;;
+  *) echo "Unsupported test target: $STDB_TARGET"; exit 1 ;;
+esac
 unset SPACETIMEDB_TOKEN || true
-export SPACETIMEDB_URI="${SPACETIMEDB_URI:-ws://127.0.0.1:3000}"
 export DEMO_MODE=1
 export ENABLE_BLUESKY=0
 export ENABLE_DEV_WIPE=1
 export AGENT_URL="${AGENT_URL:-http://127.0.0.1:8001}"
 export ORCH_PROXY_TARGET="http://127.0.0.1:${ORCH_PORT}"
-export VITE_SPACETIMEDB_DB=proxiprompt-test
+export VITE_SPACETIMEDB_DB="$SPACETIMEDB_DB"
 export VITE_SPACETIMEDB_URI="${SPACETIMEDB_URI}"
 export VITE_ORCH_URL="http://127.0.0.1:${ORCH_PORT}"
 export E2E_WEB_URL="http://127.0.0.1:${WEB_PORT}"
 export E2E_ORCH_URL="http://127.0.0.1:${ORCH_PORT}"
+export E2E_DB="$SPACETIMEDB_DB"
+export E2E_DB_URI="$SPACETIMEDB_URI"
 
 if [[ "$SPACETIMEDB_DB" == "proxiprompt" ]]; then
   echo "Refusing to run browser e2e against the live proxiprompt database."
@@ -57,8 +69,6 @@ cleanup() {
   wait 2>/dev/null || true
   sleep 0.3
 }
-trap cleanup EXIT INT TERM
-
 if listening "$ORCH_PORT"; then
   echo "Port ${ORCH_PORT} is already in use. Stop that process before browser e2e."
   exit 1
@@ -67,7 +77,9 @@ if listening "$WEB_PORT"; then
   echo "Port ${WEB_PORT} is already in use. Stop that process before browser e2e."
   exit 1
 fi
-if ! up "http://127.0.0.1:3000/v1/identity"; then
+# Install cleanup only after proving these ports are free; never kill someone else's stack.
+trap cleanup EXIT INT TERM
+if [[ "$STDB_TARGET" == "local" ]] && ! up "http://127.0.0.1:3000/v1/identity"; then
   echo "SpacetimeDB is not running on :3000. Start it with: spacetime start --listen-addr 127.0.0.1:3000"
   exit 1
 fi
@@ -76,10 +88,10 @@ if ! up "http://127.0.0.1:8001/health"; then
   exit 1
 fi
 
-echo "Clearing proxiprompt-test"
-(cd "$ROOT/spacetimedb" && spacetime publish --server local --module-path . proxiprompt-test --delete-data=always -y)
+echo "Clearing ${SPACETIMEDB_DB} on ${STDB_TARGET}"
+(cd "$ROOT/spacetimedb" && spacetime publish --server "$STDB_TARGET" --module-path . "$SPACETIMEDB_DB" --delete-data=always -y)
 
-STDB_URI="$SPACETIMEDB_URI" STDB_DB="$SPACETIMEDB_DB" STDB_SERVER=local pnpm --filter @proxiprompt/spacetimedb exec tsx scripts/bootstrap-worker.ts
+STDB_URI="$SPACETIMEDB_URI" STDB_DB="$SPACETIMEDB_DB" STDB_SERVER="$STDB_TARGET" pnpm --filter @proxiprompt/spacetimedb exec tsx scripts/bootstrap-worker.ts
 
 echo "Starting test orchestrator on :${ORCH_PORT}"
 (cd "$ROOT/services/orchestrator" && pnpm exec tsx src/index.ts) > /tmp/proxiprompt-e2e-orch.log 2>&1 &
@@ -110,8 +122,8 @@ fi
 # Vite inlines VITE_SPACETIMEDB_DB into the transformed module. Refuse to click
 # through onboarding if that string is the live database.
 module_js="$(curl -sf "http://127.0.0.1:${WEB_PORT}/src/spacetime.tsx")"
-if ! grep -q "proxiprompt-test" <<<"$module_js"; then
-  echo "Refusing to run: the test web app is not pointed at proxiprompt-test."
+if ! grep -q "$SPACETIMEDB_DB" <<<"$module_js"; then
+  echo "Refusing to run: the test web app is not pointed at $SPACETIMEDB_DB."
   exit 1
 fi
 

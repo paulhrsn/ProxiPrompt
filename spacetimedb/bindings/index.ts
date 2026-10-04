@@ -50,6 +50,7 @@ import GrantServiceRoleReducer from "./grant_service_role_reducer";
 import HeartbeatReducer from "./heartbeat_reducer";
 import RegisterDeviceReducer from "./register_device_reducer";
 import ReportContentReducer from "./report_content_reducer";
+import SetDemoProfileReducer from "./set_demo_profile_reducer";
 import SetNotificationsPausedReducer from "./set_notifications_paused_reducer";
 import SetProfileReducer from "./set_profile_reducer";
 import SubmitQueryReducer from "./submit_query_reducer";
@@ -356,6 +357,7 @@ const reducersSchema = __reducers(
   __reducerSchema("heartbeat", HeartbeatReducer),
   __reducerSchema("register_device", RegisterDeviceReducer),
   __reducerSchema("report_content", ReportContentReducer),
+  __reducerSchema("set_demo_profile", SetDemoProfileReducer),
   __reducerSchema("set_notifications_paused", SetNotificationsPausedReducer),
   __reducerSchema("set_profile", SetProfileReducer),
   __reducerSchema("submit_query", SubmitQueryReducer),

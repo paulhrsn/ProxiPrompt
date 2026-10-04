@@ -2,6 +2,10 @@ import { DbConnection } from "../spacetimedb/bindings";
 import { readFileSync } from "node:fs";
 import { enterDemo, expect, test } from "./fixtures";
 
+const DB = process.env.E2E_DB ?? "proxiprompt-test";
+const URI = process.env.E2E_DB_URI ?? "ws://127.0.0.1:3000";
+const TOKEN_KEY = `pp.token:${DB}`;
+
 test("a dropped database connection recovers with the same account", async ({ page }) => {
   await page.addInitScript(() => {
     const original = window.WebSocket;
@@ -24,7 +28,7 @@ test("a dropped database connection recovers with the same account", async ({ pa
   await page.getByLabel("Name", {exact:true}).fill(username);
   await page.getByRole("button", {name:"Continue",exact:true}).click();
   await expect(page.getByRole("navigation", {name:"Primary"})).toBeVisible();
-  const token = await page.evaluate(() => localStorage.getItem("pp.token:proxiprompt-test"));
+  const token = await page.evaluate(key => localStorage.getItem(key), TOKEN_KEY);
   const socketsBefore = await page.evaluate(() =>
     (window as unknown as {auditSockets:WebSocket[]}).auditSockets.filter(s=>s.url.includes("/v1/database/")).length);
   await page.evaluate(() => {
@@ -36,7 +40,7 @@ test("a dropped database connection recovers with the same account", async ({ pa
     (window as unknown as {auditSockets:WebSocket[]}).auditSockets.filter(s=>s.url.includes("/v1/database/")).length)).toBeGreaterThan(socketsBefore + 2);
   await page.getByRole("navigation").getByRole("button", {name:"You",exact:true}).click();
   await expect(page.getByText(username, {exact:true})).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("pp.token:proxiprompt-test"))).toBe(token);
+  expect(await page.evaluate(key => localStorage.getItem(key), TOKEN_KEY)).toBe(token);
 });
 
 test("demo location stays fresh after leaving You", async ({page}) => {
@@ -46,9 +50,9 @@ test("demo location stays fresh after leaving You", async ({page}) => {
   await page.getByRole("button",{name:"Continue",exact:true}).click();
   await page.getByRole("navigation").getByRole("button",{name:"You",exact:true}).click();
   await page.getByLabel("Location",{exact:true}).selectOption({label:"Shapiro Undergraduate Library"});
-  const token = await page.evaluate(()=>localStorage.getItem("pp.token:proxiprompt-test")!);
+  const token = await page.evaluate(key=>localStorage.getItem(key)!, TOKEN_KEY);
   const conn = await new Promise<DbConnection>((resolve,reject)=> DbConnection.builder()
-    .withUri("ws://127.0.0.1:3000").withDatabaseName("proxiprompt-test").withToken(token)
+    .withUri(URI).withDatabaseName(DB).withToken(token)
     .onConnect(c=>resolve(c)).onConnectError((_c,e)=>reject(e)).build());
   try {
     await new Promise<void>((resolve,reject)=>conn.subscriptionBuilder().onApplied(()=>resolve())
@@ -59,8 +63,8 @@ test("demo location stays fresh after leaving You", async ({page}) => {
     await page.clock.fastForward(125000);
     await expect.poll(()=>[...conn.db.myLocation.iter()][0]?.capturedAt.microsSinceUnixEpoch > initial).toBe(true);
     const worker = await new Promise<DbConnection>((resolve,reject)=>DbConnection.builder()
-      .withUri("ws://127.0.0.1:3000").withDatabaseName("proxiprompt-test")
-      .withToken(readFileSync("spacetimedb/.local/worker-token-proxiprompt-test","utf8").trim())
+      .withUri(URI).withDatabaseName(DB)
+      .withToken(readFileSync(`spacetimedb/.local/worker-token-${DB}`,"utf8").trim())
       .onConnect(c=>resolve(c)).onConnectError((_c,e)=>reject(e)).build());
     try {
       await new Promise<void>((resolve,reject)=>worker.subscriptionBuilder().onApplied(()=>resolve())
@@ -83,14 +87,14 @@ test("demo location stays fresh after leaving You", async ({page}) => {
   } finally {conn.disconnect();}
 });
 
-test("sign-out unsubscribes push and deactivates the old account's endpoint", async ({page}) => {
+test("sign-out detaches push and a new account owns its restored subscription", async ({page}) => {
   await page.goto("/"); await enterDemo(page);
   await page.getByLabel("Name",{exact:true}).fill(`push_${Date.now().toString(36)}`);
   await page.getByRole("button",{name:"Continue",exact:true}).click();
   await expect(page.getByRole("navigation",{name:"Primary"})).toBeVisible();
-  const token=await page.evaluate(()=>localStorage.getItem("pp.token:proxiprompt-test")!);
+  const token=await page.evaluate(key=>localStorage.getItem(key)!, TOKEN_KEY);
   const conn=await new Promise<DbConnection>((resolve,reject)=>DbConnection.builder()
-    .withUri("ws://127.0.0.1:3000").withDatabaseName("proxiprompt-test").withToken(token)
+    .withUri(URI).withDatabaseName(DB).withToken(token)
     .onConnect(c=>resolve(c)).onConnectError((_c,e)=>reject(e)).build());
   const endpoint=`https://push.example.invalid/logout-${Date.now()}`;
   try {
@@ -110,6 +114,34 @@ test("sign-out unsubscribes push and deactivates the old account's endpoint", as
     await page.getByRole("button",{name:/^Sign out/}).click();
     await expect.poll(()=>[...conn.db.myDevices.iter()].find(d=>d.endpoint===endpoint)?.active).toBe(false);
     expect(await page.evaluate(()=>(window as unknown as {auditUnsubscribed:boolean}).auditUnsubscribed)).toBe(true);
-    await expect.poll(()=>page.evaluate(()=>localStorage.getItem("pp.token:proxiprompt-test"))).toBeNull();
+    await expect.poll(()=>page.evaluate(key=>localStorage.getItem(key), TOKEN_KEY)).toBeNull();
+    await page.context().grantPermissions(["notifications"]);
+    // This Chromium build reports denied even with a Playwright permission grant.
+    // Stub permission alongside the push subscription; actual OS push is deferred.
+    await page.evaluate(()=>Object.defineProperty(Notification,"permission",{configurable:true,get:()=>"granted"}));
+    expect(await page.evaluate(()=>Notification.permission)).toBe("granted");
+    expect(await page.evaluate(()=>"PushManager" in window)).toBe(true);
+    await page.evaluate(endpoint=>{
+      Object.defineProperty(navigator.serviceWorker,"getRegistration",{configurable:true,value:async()=>({
+        pushManager:{getSubscription:async()=>({endpoint,
+          toJSON:()=>({endpoint,keys:{p256dh:"new-test-key",auth:"new-test-auth"}})})}
+      })});
+    },endpoint);
+    await enterDemo(page);
+    await page.getByLabel("Name",{exact:true}).fill(`new_push_${Date.now().toString(36)}`);
+    await page.getByRole("button",{name:"Continue",exact:true}).click();
+    await expect(page.getByRole("navigation",{name:"Primary"})).toBeVisible();
+    const newToken=await page.evaluate(key=>localStorage.getItem(key)!, TOKEN_KEY);
+    expect(newToken).not.toBe(token);
+    const next=await new Promise<DbConnection>((resolve,reject)=>DbConnection.builder()
+      .withUri(URI).withDatabaseName(DB).withToken(newToken)
+      .onConnect(c=>resolve(c)).onConnectError((_c,e)=>reject(e)).build());
+    try {
+      await new Promise<void>((resolve,reject)=>next.subscriptionBuilder().onApplied(()=>resolve())
+        .onError(reject).subscribe(["SELECT * FROM my_devices"]));
+      await expect.poll(()=>[...next.db.myDevices.iter()].find(d=>d.endpoint===endpoint)?.active).toBe(true);
+      await expect.poll(()=>[...conn.db.myDevices.iter()].some(d=>d.endpoint===endpoint)).toBe(false);
+      expect(next.identity!.isEqual(conn.identity!)).toBe(false);
+    } finally {next.disconnect();}
   } finally {conn.disconnect();}
 });

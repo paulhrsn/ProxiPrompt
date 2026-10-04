@@ -39,6 +39,12 @@ export const Comment = __t.object("Comment", {
 });
 export type Comment = __Infer<typeof Comment>;
 
+export const DemoName = __t.object("DemoName", {
+  identity: __t.identity(),
+  displayName: __t.string(),
+});
+export type DemoName = __Infer<typeof DemoName>;
+
 export const Device = __t.object("Device", {
   id: __t.u64(),
   owner: __t.identity(),
