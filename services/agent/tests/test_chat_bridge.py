@@ -105,3 +105,39 @@ async def test_follow_up_poll_returns_a_late_answer():
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         text = await bridge.poll_until_done("http://orc", "abc", total_s=2, interval_s=0.01, client=c)
     assert text == "Seats opened up. Confidence: High. Sources: 2 recent nearby reports."
+
+
+def _recording_handler(seen: list):
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "abc"})
+        return httpx.Response(200, json={"status": "answered", "headline": "Quiet."})
+
+    return handler
+
+
+async def test_bridge_token_is_sent_on_every_orchestrator_request(monkeypatch):
+    monkeypatch.setenv("ORCH_BRIDGE_TOKEN", "s3cret")
+    seen: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_recording_handler(seen))) as c:
+        reply, _ = await bridge.run_orchestrated("Is Shapiro busy?", "agent1abc", "http://orc", total_s=5, interval_s=0.01, client=c)
+    assert reply.startswith("Quiet.")
+    assert [r.method for r in seen] == ["POST", "GET"]
+    assert all(r.headers["authorization"] == "Bearer s3cret" for r in seen)
+
+
+async def test_follow_up_poll_sends_the_bridge_token(monkeypatch):
+    monkeypatch.setenv("ORCH_BRIDGE_TOKEN", "s3cret")
+    seen: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_recording_handler(seen))) as c:
+        await bridge.poll_until_done("http://orc", "abc", total_s=5, interval_s=0.01, client=c)
+    assert seen and all(r.headers["authorization"] == "Bearer s3cret" for r in seen)
+
+
+async def test_no_authorization_header_without_a_bridge_token(monkeypatch):
+    monkeypatch.delenv("ORCH_BRIDGE_TOKEN", raising=False)
+    seen: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_recording_handler(seen))) as c:
+        await bridge.run_orchestrated("Is Shapiro busy?", "agent1abc", "http://orc", total_s=5, interval_s=0.01, client=c)
+    assert seen and all("authorization" not in r.headers for r in seen)

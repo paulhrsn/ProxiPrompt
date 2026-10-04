@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { CATALOG_PLACES, resolveCatalogPlace } from "@proxiprompt/core";
 import { searchPlaces } from "./places.js";
@@ -50,6 +51,30 @@ function json(res: ServerResponse, code: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+const LOOPBACK_HOSTS = ["127.0.0.1", "::1", "localhost"];
+
+/**
+ * Gate for the /asi/query routes, which submit as the service identity. With ORCH_BRIDGE_TOKEN
+ * set, callers must send `Authorization: Bearer <token>`. A non-loopback ORCH_HOST with no token
+ * fails closed (503); the default loopback bind with no token stays open for local dev.
+ * Returns true when it has already answered the request.
+ */
+function rejectBridge(req: IncomingMessage, res: ServerResponse): boolean {
+  const token = process.env.ORCH_BRIDGE_TOKEN ?? "";
+  if (!token) {
+    const host = process.env.ORCH_HOST?.trim() || "127.0.0.1";
+    if (LOOPBACK_HOSTS.includes(host)) return false;
+    json(res, 503, { error: "ORCH_BRIDGE_TOKEN is required when ORCH_HOST is not a loopback address" });
+    return true;
+  }
+  const header = req.headers.authorization ?? "";
+  const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7) : "");
+  const want = Buffer.from(token);
+  if (given.length === want.length && timingSafeEqual(given, want)) return false;
+  json(res, 401, { error: "missing or invalid bridge token" });
+  return true;
+}
+
 export function startAsiServer(
   getConn: () => DbConnection | null,
   port: number,
@@ -81,6 +106,7 @@ export function startAsiServer(
         return;
       }
       if (req.method === "POST" && url.pathname === "/asi/query") {
+        if (rejectBridge(req, res)) return;
         const body = JSON.parse((await readBody(req)) || "{}") as { text?: string; sender?: string };
         const text = (body.text ?? "").trim();
         const id = `asi-${Date.now().toString(36)}`;
@@ -120,6 +146,7 @@ export function startAsiServer(
       }
       const poll = url.pathname.match(/^\/asi\/query\/([^/]+)$/);
       if (req.method === "GET" && poll) {
+        if (rejectBridge(req, res)) return;
         const id = decodeURIComponent(poll[1]);
         const rec = records.get(id);
         if (!rec) {

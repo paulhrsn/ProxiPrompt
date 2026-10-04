@@ -43,6 +43,11 @@ def orchestrator_url() -> str:
     return os.environ.get("ORCHESTRATOR_URL", "").strip().rstrip("/")
 
 
+def _auth_headers() -> dict[str, str]:
+    token = os.environ.get("ORCH_BRIDGE_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def _confidence_text(data: dict[str, Any]) -> str | None:
     c = data.get("confidence")
     if isinstance(c, dict):
@@ -88,7 +93,7 @@ def format_result(data: dict[str, Any]) -> str:
 
 async def _poll_once(client: httpx.AsyncClient, base_url: str, qid: str) -> dict[str, Any] | None:
     try:
-        g = await client.get(f"{base_url}/asi/query/{qid}")
+        g = await client.get(f"{base_url}/asi/query/{qid}", headers=_auth_headers())
         g.raise_for_status()
         data = g.json()
     except Exception as exc:
@@ -123,7 +128,7 @@ async def run_orchestrated(text: str, sender: str, base_url: str,
     client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT_S)
     try:
         try:
-            r = await client.post(f"{base_url}/asi/query", json={"text": text, "sender": sender})
+            r = await client.post(f"{base_url}/asi/query", json={"text": text, "sender": sender}, headers=_auth_headers())
             r.raise_for_status()
             created = r.json()
         except Exception as exc:

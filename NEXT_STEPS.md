@@ -149,7 +149,7 @@ Follow-up: if the answer is not ready after 45s, the chat says it will send the 
 
 - iPhone push: open the HTTPS ngrok URL in Safari, Share > Add to Home Screen, open from the icon, You tab > Enable notifications. The manifest fix for ngrok (`crossorigin="use-credentials"`) is untested on iOS Safari.
 - Rehearse SPEC §14 with the team.
-- Hosted deploy of web/orchestrator/agent. Before binding `ORCH_HOST=0.0.0.0`, add a shared bridge token on `/asi/query` (it submits as the service identity).
+- Hosted deploy of web/orchestrator/agent. The shared bridge token now exists: set the same `ORCH_BRIDGE_TOKEN` on the orchestrator and the agent (the agent sends it as `Authorization: Bearer`). The orchestrator returns 503 on `/asi/query` if `ORCH_HOST` is non-loopback and the token is unset.
 
 ---
 
