@@ -8,13 +8,12 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
-**As of 2026-10-04 ~02:50 local: browser demo, scheduled deadlines, watches, prompt expiry, and garbage collection are verified.** A watch reports open seats even when the two plans use different option ids. Still human-only: SpacetimeAuth client ID, `spacetime login` for MainCloud, Agentverse handle, public chat link, demo video, Devpost, and iPhone push.
+**As of 2026-10-04 (session 15): all agent-doable work is done and verified on `main`.** Session 15 merged four lanes (see the orchestration log below): the browser e2e suite is isolated and green (4/4 twice), `/asi/query` has an optional shared bridge token that fails closed on a public bind, Known issues are accurate, and reciprocal priority (SPEC §7) is built. Remaining work needs Paul: SpacetimeAuth client ID, `spacetime login` for MainCloud, Agentverse handle, public ASI:One chat link, demo video, Devpost, and iPhone push.
 
 State at handoff:
-- Local stack: SpacetimeDB on :3000, agent on :8001, Vite on :5173. The live orchestrator was down at the start of this session and was started again on :8080 after publishing `proxiprompt` (no data wipe). Restart everything with `pnpm dev` if in doubt.
-- ASI:One is live both directions: the agent uses it as its LLM (`ASI_ONE_API_KEY`), and ASI:One chat reaches the agent through Agentverse mailbox (Fetch.ai track requirement met, verified with queries #37/#38).
-- Push (VAPID) keys exist; push to a laptop browser works after "Enable notifications" on the You tab. iPhone untested (needs Add to Home Screen from the HTTPS ngrok URL).
-- Agreed plan (Paul chose option "A" = pursue Fetch.ai): browser e2e, the bugs it found, and watches are done. What is left needs Paul: SpacetimeAuth, MainCloud, the Agentverse handle, a public chat link, the demo video, and Devpost.
+- Infra left running by the orchestrator: SpacetimeDB on :3000 and the agent on :8001. No live orchestrator or Vite (8080/5173); run `pnpm dev` for the full local stack.
+- Tests on main: core 131, orchestrator 63, agent 148, browser e2e 4, guardrails 72 (last run session 14; no module change since).
+- New env var `ORCH_BRIDGE_TOKEN` (orchestrator + agent): optional locally; required before `ORCH_HOST=0.0.0.0`. New env switch `RECIPROCAL_PRIORITY=0` turns the experiment off.
 
 ## Status by plan to-do
 | to-do | status | notes |
@@ -73,10 +72,10 @@ Goal (Paul): take the 4 open items; Sonnet subagents implement, Opus orchestrate
 
 | Lane | Item | Branch / worktree | Isolation | Status |
 |---|---|---|---|---|
-| L1 | e2e suite isolation: canonical then watch flake on shared `proxiprompt-test` | `fix/e2e-isolation` / `../ProxiPrompt-lanes/fix-e2e-isolation` | sole owner of `proxiprompt-test`, ports 8081/5174 | dispatched |
+| L1 | e2e suite isolation: canonical then watch flake on shared `proxiprompt-test` | `fix/e2e-isolation` / `../ProxiPrompt-lanes/fix-e2e-isolation` | sole owner of `proxiprompt-test`, ports 8081/5174 | **merged** (`31b6578`) |
 | L2 | shared bridge token on `/asi/query` (safe hosted deploy) | `feat/asi-bridge-token` / `../ProxiPrompt-lanes/feat-asi-bridge-token` | orchestrator `asi.ts` + agent `bridge.py`; no DB | **merged** (`f33071a`) |
 | L3 | PROGRESS "Known issues" cleanup (stale lines) | `docs/known-issues` / `../ProxiPrompt-lanes/docs-known-issues` | only the Known issues section | **merged** (`0e372f9`) |
-| L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | **merged** (`3e325d9`); browser e2e pending L1 |
+| L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | **merged** (`3e325d9`); browser e2e passed on main |
 
 Infra started by orchestrator: `spacetime start` on :3000, shared agent on :8001 (LLM on). No live orchestrator/Vite on 8080/5173.
 
@@ -87,6 +86,9 @@ Events:
 - L2 reported `c7bc659`: `ORCH_BRIDGE_TOKEN` gates both `/asi/query` routes (constant-time compare, 401), fails closed with 503 on a non-loopback `ORCH_HOST` with no token; `bridge.py` sends the Bearer header. Orchestrator re-ran in the lane: orchestrator 55/55, agent 148/148, typecheck clean, 0 dashes. Sent back for one fix: orchestrator did not trim the token while the agent does (trailing space in a .env would 401 every chat).
 - L2 fix `4781aa4` (test, failed first) + `f33071a` (trim). Orchestrator re-verified: orchestrator 56/56, agent 148/148, typecheck clean. Merged to main; orchestrator suite 56/56 on main after merge.
 - L4 reported `3e325d9`: `reciprocityCredit` (core) = real answers in last 24 h, passes excluded, cap 5; planning queries served by credit desc then created; first wave = `FIRST_WAVE + credit` (capped), later waves unchanged; one private `boost` timeline event when credit > 0; `RECIPROCAL_PRIORITY` config key + env off-switch; SPEC §7 subsection + §13. No schema change. Orchestrator review: DB accepts any 1-40 char event kind so `boost` is valid at runtime; core 131/131, orchestrator 51/51, both typechecks clean, 0 dashes. Merged; on main after L2+L4: core 131, orchestrator 63, tsc clean. Browser e2e of the merged result runs after L1 lands (L1 owns the e2e ports).
+- L1 reported `31b6578`: two separate failures. (a) Syn's UI update added a "Your location" region, so `getByLabel("Location")` matched two elements and broke canonical + watch; fixed with `{ exact: true }`. (b) Isolation: canonical leaves two fresh seating reports at Shapiro; `watchReading` uses the modal firsthand report, so the watch spec's single report was outvoted (intended product behaviour, so a test-isolation fix). New `e2e/fixtures.ts` auto-fixture calls the test orchestrator's `POST /dev/wipe` before every test; all specs import from it; `e2e-browser.sh` exports `E2E_ORCH_URL`. Worker ran full suite twice: 4/4. Orchestrator review: diff scoped to e2e files + one script line, 0 dashes, test orchestrator already has `ENABLE_DEV_WIPE=1`. Merged as `36c56b3`.
+- **Final verification on main (all 4 lanes merged):** `pnpm e2e:browser` 4/4 passed twice (59.1 s, 57.4 s: canonical demo, mobile layout, signed-out welcome, watch). Core 131/131, orchestrator 63/63, agent 148/148, web typecheck clean. Reciprocal priority exercised by the canonical run (responders earn credit; the second asker's flow still reuses evidence). No module change this session, so guardrails (72) not re-run.
+- Session 15 complete: all 4 items merged and verified; worktrees removed.
 
 ## Work log
 - 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
