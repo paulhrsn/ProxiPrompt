@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Any
@@ -150,7 +151,12 @@ async def plan_only_reply(text: str) -> str:
     return " ".join(lines)
 
 
+# ASI:One prefixes the addressed agent ("@agent1q…" or "@handle") to the message text.
+_LEADING_MENTIONS = re.compile(r"^(?:\s*@[\w.-]+)+\s*")
+
+
 async def handle_chat_text(text: str, sender: str) -> str:
+    text = _LEADING_MENTIONS.sub("", text or "")
     url = orchestrator_url()
     if url:
         return await run_orchestrated(text, sender, url)

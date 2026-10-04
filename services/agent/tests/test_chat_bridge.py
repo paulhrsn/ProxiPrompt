@@ -67,3 +67,21 @@ async def test_orchestrator_unreachable():
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         reply = await bridge.run_orchestrated("q", "s", "http://orc", client=c)
     assert "couldn't reach" in reply
+
+
+async def test_leading_agent_mention_is_stripped_before_submitting(monkeypatch):
+    """ASI:One prefixes "@agent1q…" when a chat targets this agent; it is not part of the question."""
+    seen = {}
+
+    async def fake_run(text, sender, url):
+        seen["text"] = text
+        return "ok"
+
+    monkeypatch.setenv("ORCHESTRATOR_URL", "http://orc")
+    monkeypatch.setattr(bridge, "run_orchestrated", fake_run)
+    await bridge.handle_chat_text("@agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs is the dude open rn", "s")
+    assert seen["text"] == "is the dude open rn"
+    await bridge.handle_chat_text("@proxipromptagent  @agent1abc is Shapiro busy?", "s")
+    assert seen["text"] == "is Shapiro busy?"
+    await bridge.handle_chat_text("is the line at @ the union long", "s")
+    assert seen["text"] == "is the line at @ the union long"
