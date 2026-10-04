@@ -18,6 +18,8 @@ import {
 
 type Any = any;
 const run = Math.random().toString(36).slice(2, 7);
+// The CLI checks below shell out to `spacetime`; point them at the same server as STDB_URI.
+const CLI_SERVER = process.env.STDB_SERVER ?? 'local';
 const slug = `gr-${run}`;
 const nowMicros = () => BigInt(Date.now()) * 1000n;
 const rows = (c: Client, table: string): Any[] => [...(c.conn.db as Any)[table].iter()];
@@ -622,7 +624,7 @@ await check('a client cannot call the scheduled deadline reducer', async () => {
   const { promisify } = await import('node:util');
   const runCall = promisify(execFile);
   try {
-    await runCall('spacetime', ['call', '--server', 'local', DB, 'job_deadline_reached', '--anonymous', '-y'], { timeout: 20_000 });
+    await runCall('spacetime', ['call', '--server', CLI_SERVER, DB, 'job_deadline_reached', '--anonymous', '-y'], { timeout: 20_000 });
     throw new Error('scheduled reducer was client-callable');
   } catch (e) {
     const msg = `${errMessage(e)}\n${(e as { stderr?: string; stdout?: string }).stderr ?? ''}\n${(e as { stdout?: string }).stdout ?? ''}`;
@@ -668,7 +670,7 @@ await check('a client cannot call the scheduled cleanup reducers', async () => {
   const runCall = promisify(execFile);
   for (const name of ['prompt_expired', 'gc_due']) {
     try {
-      await runCall('spacetime', ['call', '--server', 'local', DB, name, '--anonymous', '-y'], { timeout: 20_000 });
+      await runCall('spacetime', ['call', '--server', CLI_SERVER, DB, name, '--anonymous', '-y'], { timeout: 20_000 });
       throw new Error(`${name} was client-callable`);
     } catch (e) {
       const msg = `${errMessage(e)}\n${(e as { stderr?: string }).stderr ?? ''}`;
@@ -691,7 +693,7 @@ await check('garbage collection keeps fresh evidence and drops what is past the 
   const runCall = promisify(execFile);
   const staleKey = `aabbcc:queries:1`;
   const sql = async (query: string) => {
-    const out = await runCall('spacetime', ['sql', '--server', 'local', '--format', 'json', '--yes', DB, query], { timeout: 20_000, encoding: 'utf8' });
+    const out = await runCall('spacetime', ['sql', '--server', CLI_SERVER, '--format', 'json', '--yes', DB, query], { timeout: 20_000, encoding: 'utf8' });
     return typeof out === 'string' ? out : String((out as { stdout?: string }).stdout ?? '');
   };
   await sql(`INSERT INTO rate_bucket (key, count) VALUES ('${staleKey}', 1)`);

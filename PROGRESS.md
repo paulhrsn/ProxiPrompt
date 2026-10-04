@@ -8,7 +8,7 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
-**As of 2026-10-04 (session 15): all agent-doable work is done and verified on `main`.** Session 15 merged four lanes (see the orchestration log below): the browser e2e suite is isolated and green (4/4 twice), `/asi/query` has an optional shared bridge token that fails closed on a public bind, Known issues are accurate, and reciprocal priority (SPEC §7) is built. Remaining work needs Paul: SpacetimeAuth client ID, `spacetime login` for MainCloud, Agentverse handle, public ASI:One chat link, demo video, Devpost, and iPhone push.
+**As of 2026-10-04 (session 15): all agent-doable work is done and verified on `main`.** Session 15 merged four lanes (see the orchestration log below): the browser e2e suite is isolated and green (4/4 twice), `/asi/query` has an optional shared bridge token that fails closed on a public bind, Known issues are accurate, and reciprocal priority (SPEC §7) is built. Remaining work needs Paul: SpacetimeAuth client ID, Agentverse handle, public ASI:One chat link, demo video, Devpost, and iPhone push.
 
 State at handoff:
 - Infra left running by the orchestrator: SpacetimeDB on :3000 and the agent on :8001. No live orchestrator or Vite (8080/5173); run `pnpm dev` for the full local stack.
@@ -45,6 +45,9 @@ State at handoff:
 | `AGENT_HOST`, `ORCH_HOST` | agent / orchestrator | unset = bind 127.0.0.1. Set `0.0.0.0` only on a hosted deploy (and add a bridge token first, see Known issues) |
 | `ENABLE_DEV_WIPE` | orchestrator | `dev.sh` sets `1`; enables the localhost-only Wipe activity button |
 | `STDB_DB` | spacetimedb scripts, e2e | e2e refuses the live `proxiprompt` DB; use `STDB_DB=proxiprompt-test` |
+| `STDB_TARGET` | scripts/dev.sh | `maincloud` = use MainCloud DB `proxiprompt-mhacks` instead of local SpacetimeDB |
+| `STDB_SERVER`, `STDB_URI` | spacetimedb scripts | CLI server nickname (`local`/`maincloud`) and WebSocket URI for guardrails/smoke |
+| `ORCH_BRIDGE_TOKEN` | orchestrator + agent | optional locally; required before `ORCH_HOST=0.0.0.0` |
 | `ORCHESTRATOR_URL` | agent chat bridge | `http://127.0.0.1:8080` |
 | `DEMO_MODE` | orchestrator | `1` for judged timings |
 | `ENABLE_BLUESKY` | orchestrator | default on; `scripts/dev.sh` sets `0` |
@@ -66,6 +69,13 @@ State at handoff:
 - 2026-10-03 (correctness pass): **Prompt wording is always the plan's generated `survey.question`, never the requester's raw text.** One evidence job can serve several queries (Jaccard >= 0.5 attach, SPEC §7 step 3), so the first asker's words were reaching responders for someone else's question; quoting the asker also conflicts with SPEC §3 ("push prompts never identify the requester"). Removed the two raw-text overrides in `planner.py:_assemble_plan`. SPEC §9 updated.
 - 2026-10-03 (correctness pass): **Social (Bluesky) evidence can inform a score but never satisfy sufficiency, and never counts as a nearby report.** Three scraped posts previously reached support 0.72 with ceiling 0.95 and answered a query with nobody asked, violating SPEC §1.1 in spirit. `DimensionScore.firsthandSupport` added and gated in `isSufficient`; social excluded from `contributors`/`ceilingFor`; social filed under its own `other:social_mention` dimension instead of hijacking `plan.dimensions[0]`. `ENABLE_BLUESKY` default left unchanged. SPEC §8 updated.
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
+
+## Work log addendum: MainCloud (2026-10-04, session 15, after Paul's `spacetime login`)
+- Published to MainCloud: live DB **`proxiprompt-mhacks`** (dashboard https://spacetimedb.com/proxiprompt-mhacks) and test DB `proxiprompt-mhacks-test`. New names, not `proxiprompt`, because worker tokens are stored per DB name in `spacetimedb/.local/worker-token-<db>`; reusing the local name would mix local and cloud tokens.
+- Service role on `proxiprompt-mhacks` claimed immediately after publish by our worker identity `c2005377d9d4...` (token in git-ignored `spacetimedb/.local/worker-token-proxiprompt-mhacks`). Do not delete that file: the claim is first-come and the DB is public.
+- Guardrails against MainCloud test DB: **72/72** (`STDB_SERVER=maincloud STDB_URI=wss://maincloud.spacetimedb.com STDB_DB=proxiprompt-mhacks-test pnpm --filter @proxiprompt/spacetimedb exec tsx scripts/guardrails.ts`). First run was 69/72 because three checks shelled out with a hard-coded `--server local`; guardrails now read `STDB_SERVER` (default `local`). Smoke test on MainCloud: row delivered through subscription. Orchestrator connected to `proxiprompt-mhacks` as the claimed worker and subscribed to `svc_*` (then stopped; the team's dev stack still defaults to local).
+- **Switch:** `STDB_TARGET=maincloud pnpm dev` publishes to `proxiprompt-mhacks` on MainCloud, skips local SpacetimeDB, and points orchestrator + web at it. The web app now connects directly to a configured remote `VITE_SPACETIMEDB_URI` from every host (ngrok/phones included) instead of the local `/v1` proxy.
+- Not yet done: run the full demo on MainCloud with the team (`STDB_TARGET=maincloud pnpm dev`); browser e2e still targets local `proxiprompt-test` by design.
 
 ## Session 15 orchestration log (2026-10-04, Opus orchestrating, Sonnet implementing)
 Goal (Paul): take the 4 open items; Sonnet subagents implement, Opus orchestrates and verifies; keep this log current. Workers never edit PROGRESS.md (except L3's assigned section); the orchestrator records every dispatch, verification and merge here.
@@ -254,7 +264,7 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 Full specs are in `NEXT_STEPS.md`.
 
 1. **SpacetimeAuth** needs a project and client ID in `VITE_SPACETIMEAUTH_CLIENT_ID`. The OIDC path in `apps/web/src/auth.tsx` is already implemented and falls back to labeled dev auth until that ID exists.
-2. **MainCloud** needs `spacetime login` (browser sign-in), then `spacetime publish --server maincloud proxiprompt` from `spacetimedb/`. The orchestrator and agent can stay on the laptop.
+2. ~~MainCloud~~ done: `proxiprompt-mhacks` is live (guardrails 72/72). Run the team demo with `STDB_TARGET=maincloud pnpm dev`.
 3. **Fetch.ai deliverables that need Paul:** register handle `proxipromptagent`, a public ASI:One chat link of a finished answer, demo video, Devpost. The late-answer follow-up chat message is implemented.
 4. Later (Paul deferred): iPhone push; rehearse §14 with the team; hosted deploy (add a bridge token before `ORCH_HOST=0.0.0.0`).
 

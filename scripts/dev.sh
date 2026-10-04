@@ -22,6 +22,14 @@ export ENABLE_BLUESKY="${ENABLE_BLUESKY:-0}"
 export ENABLE_DEV_WIPE="${ENABLE_DEV_WIPE:-1}"
 export AGENT_URL="${AGENT_URL:-http://127.0.0.1:8001}"
 export AGENT_PORT="${AGENT_PORT:-8001}"
+# STDB_TARGET=maincloud runs against the hosted database instead of a local SpacetimeDB.
+STDB_TARGET="${STDB_TARGET:-local}"
+if [[ "$STDB_TARGET" == "maincloud" ]]; then
+  export SPACETIMEDB_URI="${SPACETIMEDB_URI:-wss://maincloud.spacetimedb.com}"
+  export SPACETIMEDB_DB="${SPACETIMEDB_DB:-proxiprompt-mhacks}"
+  export VITE_SPACETIMEDB_URI="$SPACETIMEDB_URI"
+  export VITE_SPACETIMEDB_DB="$SPACETIMEDB_DB"
+fi
 export SPACETIMEDB_URI="${SPACETIMEDB_URI:-ws://127.0.0.1:3000}"
 export SPACETIMEDB_DB="${SPACETIMEDB_DB:-proxiprompt}"
 export ORCH_PORT="${ORCH_PORT:-8080}"
@@ -67,7 +75,11 @@ if [[ "$SKIP_PORT80" != "1" ]] && ! up "http://127.0.0.1:80/"; then
   fi
 fi
 
-if ! up "http://127.0.0.1:3000/v1/identity"; then
+if [[ "$STDB_TARGET" == "maincloud" ]]; then
+  echo "Using MainCloud database ${SPACETIMEDB_DB} (no local SpacetimeDB)"
+  echo "Publishing module ${SPACETIMEDB_DB} to MainCloud"
+  (cd "$ROOT/spacetimedb" && spacetime publish --server maincloud --module-path . "$SPACETIMEDB_DB" -y)
+elif ! up "http://127.0.0.1:3000/v1/identity"; then
   echo "Starting SpacetimeDB on :3000"
   spacetime start --listen-addr 127.0.0.1:3000 > /tmp/proxiprompt-spacetime.log 2>&1 &
   started_spacetime=1
@@ -80,8 +92,10 @@ else
   echo "SpacetimeDB already running on :3000"
 fi
 
-echo "Publishing module proxiprompt"
-(cd "$ROOT/spacetimedb" && spacetime publish --server local --module-path . proxiprompt -y)
+if [[ "$STDB_TARGET" != "maincloud" ]]; then
+  echo "Publishing module proxiprompt"
+  (cd "$ROOT/spacetimedb" && spacetime publish --server local --module-path . proxiprompt -y)
+fi
 
 echo "Starting Fetch agent on :${AGENT_PORT}"
 (cd "$ROOT/services/agent" && uv run python -m proxiprompt_agent.agent) &

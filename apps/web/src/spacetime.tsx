@@ -3,9 +3,12 @@ import { DbConnection } from "../../../spacetimedb/bindings/index.js";
 import { useDevMode, useOidc } from "./auth";
 
 function spacetimeUri(): string {
+  const configured = import.meta.env.VITE_SPACETIMEDB_URI as string | undefined;
+  // A hosted database (MainCloud) is reached directly from every host, phones included.
+  if (configured && !/\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(configured)) return configured;
   const host = location.hostname;
   if (host === "localhost" || host === "127.0.0.1") {
-    return import.meta.env.VITE_SPACETIMEDB_URI || "ws://127.0.0.1:3000";
+    return configured || "ws://127.0.0.1:3000";
   }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}`;

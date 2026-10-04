@@ -115,8 +115,7 @@ If the orchestrator is down, deadlines silently stop happening and queries hang 
 
 ### 3c. Host on MainCloud
 
-**Status:** not started. **Needs Paul:** `spacetime login` (browser sign-in, no key to paste).
-**Steps:** `spacetime publish --server maincloud proxiprompt` from `spacetimedb/`; claim the service role with the orchestrator's token; point `VITE_SPACETIMEDB_URI` and the orchestrator's `SPACETIMEDB_URI` at MainCloud. The orchestrator and agent can stay on the laptop (they connect outbound). Re-run guardrails against a MainCloud test DB first.
+**Status:** done 2026-10-04. Live DB `proxiprompt-mhacks` (test DB `proxiprompt-mhacks-test`, guardrails 72/72 there). Service role claimed by our worker; token in `spacetimedb/.local/worker-token-proxiprompt-mhacks` (keep it). Use `STDB_TARGET=maincloud pnpm dev`. Remaining: one full team demo run on MainCloud.
 
 ---
 
