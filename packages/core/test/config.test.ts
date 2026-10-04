@@ -4,8 +4,8 @@ import { getConfig } from "../src/config";
 describe("getConfig", () => {
   it("normal mode matches SPEC §7", () => {
     expect(getConfig(false)).toEqual({
-      FIRST_WAVE: 2,
-      MAX_RECIPIENTS: 5,
+      FIRST_WAVE: 10,
+      MAX_RECIPIENTS: 20,
       EXPAND_AFTER_S: 30,
       JOB_DEADLINE_S: 120,
       LATE_ACCEPT_S: 600,
@@ -18,8 +18,8 @@ describe("getConfig", () => {
 
   it("demo mode matches SPEC §7", () => {
     expect(getConfig(true)).toEqual({
-      FIRST_WAVE: 2,
-      MAX_RECIPIENTS: 5,
+      FIRST_WAVE: 10,
+      MAX_RECIPIENTS: 20,
       EXPAND_AFTER_S: 10,
       JOB_DEADLINE_S: 30,
       LATE_ACCEPT_S: 120,

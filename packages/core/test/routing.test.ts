@@ -42,9 +42,9 @@ describe("selectResponders", () => {
     const r = selectResponders({
       ...base,
       count: config.FIRST_WAVE,
-      candidates: [cand("a", 10), cand("b", 20), cand("c", 30)],
+      candidates: Array.from({ length: config.FIRST_WAVE + 2 }, (_, i) => cand(`u${i}`, 10 + i * 5)),
     });
-    expect(r.selected).toHaveLength(2);
+    expect(r.selected).toHaveLength(config.FIRST_WAVE);
   });
 
   it("carries the location source (demo) through", () => {
