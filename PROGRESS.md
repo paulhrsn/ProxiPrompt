@@ -76,7 +76,7 @@ Goal (Paul): take the 4 open items; Sonnet subagents implement, Opus orchestrate
 | L1 | e2e suite isolation: canonical then watch flake on shared `proxiprompt-test` | `fix/e2e-isolation` / `../ProxiPrompt-lanes/fix-e2e-isolation` | sole owner of `proxiprompt-test`, ports 8081/5174 | dispatched |
 | L2 | shared bridge token on `/asi/query` (safe hosted deploy) | `feat/asi-bridge-token` / `../ProxiPrompt-lanes/feat-asi-bridge-token` | orchestrator `asi.ts` + agent `bridge.py`; no DB | **merged** (`f33071a`) |
 | L3 | PROGRESS "Known issues" cleanup (stale lines) | `docs/known-issues` / `../ProxiPrompt-lanes/docs-known-issues` | only the Known issues section | **merged** (`0e372f9`) |
-| L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | dispatched |
+| L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | **merged** (`3e325d9`); browser e2e pending L1 |
 
 Infra started by orchestrator: `spacetime start` on :3000, shared agent on :8001 (LLM on). No live orchestrator/Vite on 8080/5173.
 
@@ -86,6 +86,7 @@ Events:
 - L3 done `0e372f9`: Known issues rewritten (e2e path corrected, stale VAPID line replaced with the real gap: iPhone push untested, ASI:One status line removed, env-file and human-only bullets added, reciprocal marked in progress). Orchestrator verified: diff touches only that section, 0 dashes, e2e guard claim matches `services/orchestrator/scripts/e2e.ts`. Merged to main.
 - L2 reported `c7bc659`: `ORCH_BRIDGE_TOKEN` gates both `/asi/query` routes (constant-time compare, 401), fails closed with 503 on a non-loopback `ORCH_HOST` with no token; `bridge.py` sends the Bearer header. Orchestrator re-ran in the lane: orchestrator 55/55, agent 148/148, typecheck clean, 0 dashes. Sent back for one fix: orchestrator did not trim the token while the agent does (trailing space in a .env would 401 every chat).
 - L2 fix `4781aa4` (test, failed first) + `f33071a` (trim). Orchestrator re-verified: orchestrator 56/56, agent 148/148, typecheck clean. Merged to main; orchestrator suite 56/56 on main after merge.
+- L4 reported `3e325d9`: `reciprocityCredit` (core) = real answers in last 24 h, passes excluded, cap 5; planning queries served by credit desc then created; first wave = `FIRST_WAVE + credit` (capped), later waves unchanged; one private `boost` timeline event when credit > 0; `RECIPROCAL_PRIORITY` config key + env off-switch; SPEC §7 subsection + §13. No schema change. Orchestrator review: DB accepts any 1-40 char event kind so `boost` is valid at runtime; core 131/131, orchestrator 51/51, both typechecks clean, 0 dashes. Merged; on main after L2+L4: core 131, orchestrator 63, tsc clean. Browser e2e of the merged result runs after L1 lands (L1 owns the e2e ports).
 
 ## Work log
 - 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
@@ -245,7 +246,7 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 - Agentverse handle `proxipromptagent`, a public ASI:One chat link, SpacetimeAuth and MainCloud login are still human-only (see Human-gated steps).
 - First empty `claim_service_role` wins. After a `publish` that wipes data, delete `spacetimedb/.local/worker-token-*` or reuse that token.
 - Google Places UI is catalog search only until the Maps key is set (no Maps JS wired; the You-tab mini map falls back to OpenStreetMap). The catalog covers the judged demo.
-- Reciprocal priority P1 experiment: in progress (session 15).
+- Reciprocal priority P1: built session 15 (SPEC §7); browser e2e of it pending.
 
 ## Next actions (for the next human/agent)
 Full specs are in `NEXT_STEPS.md`.
