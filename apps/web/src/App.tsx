@@ -1130,7 +1130,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
           <span>Developer diagnostics</span>
           <input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); localStorage.setItem("pp.diag", e.target.checked ? "1" : "0"); }} />
         </label>
-        {import.meta.env.DEV && ["localhost", "127.0.0.1"].includes(location.hostname) ? <DevWipeButton onDone={setToast} /> : null}
+        {import.meta.env.DEV ? <DevWipeButton onDone={setToast} /> : null}
         <button
           type="button"
           onClick={() => {
@@ -1148,10 +1148,12 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
 }
 
 /**
- * Dev builds on localhost only. Clears questions, prompts, answers, posts and reports for everyone;
+ * Dev builds only; works from localhost. Clears questions, prompts, answers, posts and reports for everyone;
  * accounts, locations, push devices and places stay. Needs two taps.
  */
 function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
+  // The orchestrator refuses the wipe from anywhere but this machine (not ngrok, not the LAN).
+  const local = ["localhost", "127.0.0.1"].includes(location.hostname);
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -1163,7 +1165,7 @@ function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
     <button
       type="button"
       className={armed ? "danger" : undefined}
-      disabled={busy}
+      disabled={busy || !local}
       onClick={async () => {
         if (!armed) return setArmed(true);
         setArmed(false);
@@ -1180,7 +1182,9 @@ function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
         }
       }}
     >
-      {busy ? "Wiping…" : armed ? "Tap again to wipe all activity" : "Wipe activity (dev)"}
+      {!local
+        ? "Wipe activity (dev): open localhost:5173 on the laptop"
+        : busy ? "Wiping…" : armed ? "Tap again to wipe all activity" : "Wipe activity (dev)"}
     </button>
   );
 }
