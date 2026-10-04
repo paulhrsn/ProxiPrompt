@@ -23,8 +23,7 @@ async def test_heuristic_plan_for_demo_question(shapiro):
         assert [o.ordinal for o in c.options] == list(range(len(c.options)))
     assert p.responder_radius_m == 150 and p.responder_count == 2
     # survey never identifies the requester or implies they are nearby
-    q = p.survey.question.lower()
-    assert "someone" not in q and "asked" not in q and "you " not in q.replace("quick question", "")
+    assert p.survey.question == SHAPIRO_Q
 
 
 @pytest.mark.parametrize(
@@ -36,7 +35,7 @@ async def test_heuristic_plan_for_demo_question(shapiro):
         ("Is the dining hall open?", "open_status"),
         ("What's the vibe tonight?", "atmosphere"),
         ("Is it packed right now?", "crowd_level"),
-        ("blah blah", "crowd_level"),
+        ("blah blah", "other:answer"),
     ],
 )
 async def test_heuristic_keywords(shapiro, text, dim):

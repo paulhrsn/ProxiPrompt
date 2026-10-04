@@ -30,7 +30,9 @@ That starts SpacetimeDB (:3000), the Fetch agent (:8001), the orchestrator (:808
 - Asker: http://localhost:5173/
 - Responder: http://127.0.0.1:5173/
 
-Those two hosts do not share a login. On the responder tab, open **You** and set the demo location to the place being asked about. The question pops up on that tab. Stop everything with `pnpm stop` (ports 3000, 8001, 8080, and 5173), or Ctrl+C in the `pnpm dev` terminal.
+Those two hosts do not share a login. Sign in with the email magic link, or press **Dev** in the corner to use a browser-only session. On the responder tab, open your name and set the demo location to the place being asked about. The question pops up on that tab. Stop everything with `pnpm stop` (ports 3000, 8001, 8080, and 5173), or Ctrl+C in the `pnpm dev` terminal.
+
+Magic link needs a SpacetimeAuth client id in `apps/web/.env` as `VITE_SPACETIMEAUTH_CLIENT_ID`. Register both redirect URIs: `http://localhost:5173/callback` and `http://127.0.0.1:5173/callback`. Your name page can change the username and sign out. The session stays signed in across refreshes. Anonymous profiles from before this login do not carry over.
 
 Optional: `npx web-push generate-vapid-keys`, put the public key in `apps/web/.env` as `VITE_VAPID_PUBLIC_KEY` and both keys in the orchestrator env. On iPhone: Safari → Share → Add to Home Screen, then enable notifications in the You tab.
 

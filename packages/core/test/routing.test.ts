@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getConfig } from "../src/config";
-import { selectResponders, type Candidate } from "../src/routing";
+import { nextWaveCount, selectResponders, type Candidate } from "../src/routing";
 
 const NOW = 1_700_000_000_000;
 const place = { lat: 42.2758, lng: -83.7372 }; // Shapiro
@@ -115,5 +115,30 @@ describe("selectResponders", () => {
     });
     expect(r.selected.map((s) => s.userId)).toEqual(["jerry", "shiyuan"]);
     expect(r.excluded).toMatchObject([{ userId: "chinmay", reason: "out_of_radius" }]);
+  });
+});
+
+describe("nextWaveCount", () => {
+  const wave = { maxRecipients: 5, waveSize: 2, expandAfterMs: 30_000 };
+
+  it("asks the first group immediately", () => {
+    expect(nextWaveCount({ ...wave, alreadyAsked: 0, stillWaiting: 0, msSinceLastWave: 0 })).toBe(2);
+  });
+
+  it("waits out the timeout while the current group has not answered", () => {
+    expect(nextWaveCount({ ...wave, alreadyAsked: 2, stillWaiting: 2, msSinceLastWave: 29_000 })).toBe(0);
+  });
+
+  it("asks a new group of the same size after the timeout", () => {
+    expect(nextWaveCount({ ...wave, alreadyAsked: 2, stillWaiting: 2, msSinceLastWave: 30_000 })).toBe(2);
+  });
+
+  it("asks the next group as soon as everyone in this one has answered", () => {
+    expect(nextWaveCount({ ...wave, alreadyAsked: 2, stillWaiting: 0, msSinceLastWave: 1_000 })).toBe(2);
+  });
+
+  it("does not ask past the recipient cap", () => {
+    expect(nextWaveCount({ ...wave, alreadyAsked: 4, stillWaiting: 0, msSinceLastWave: 30_000 })).toBe(1);
+    expect(nextWaveCount({ ...wave, alreadyAsked: 5, stillWaiting: 0, msSinceLastWave: 30_000 })).toBe(0);
   });
 });

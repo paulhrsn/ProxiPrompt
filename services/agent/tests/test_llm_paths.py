@@ -104,7 +104,7 @@ async def test_llm_survey_question_leaking_requester_is_replaced(with_key, monke
     bad = {**GOOD_PLAN, "survey": {**GOOD_PLAN["survey"], "question": "Someone asked: is it quiet near you?"}}
     mock_llm(monkeypatch, bad)
     p = await planner.plan(plan_req(shapiro))
-    assert "Someone" not in p.survey.question and p.survey.question.startswith("Quick question about")
+    assert p.survey.question == SHAPIRO_Q
 
 
 async def test_llm_refusal_honoured(with_key, monkeypatch, shapiro):

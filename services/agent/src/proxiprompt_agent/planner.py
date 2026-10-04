@@ -58,6 +58,7 @@ CONTROL_TEMPLATES: dict[str, tuple[str, list[tuple[str, str, int]]]] = {
     "temperature": ("Temperature", [("cold", "Cold", 0), ("comfortable", "Comfortable", 1), ("hot", "Hot", 2)]),
     "atmosphere": ("Atmosphere", [("dead", "Dead", 0), ("relaxed", "Relaxed", 1), ("lively", "Lively", 2), ("buzzing", "Buzzing", 3)]),
     "worth_it": ("Worth going?", [("no", "Not worth it", 0), ("maybe", "Maybe", 1), ("yes", "Worth it", 2)]),
+    "other:answer": ("Answer", [("no", "No", 0), ("unsure", "Not sure", 1), ("yes", "Yes", 2)]),
 }
 
 
@@ -168,7 +169,7 @@ KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
     ("seating_availability", re.compile(r"\bseat|\btables?\b|\bspace\b|\bstudy|\bstudying\b|\bsit\b|\bdesks?\b|\bplace to work")),
     ("wait_time", re.compile(r"\bwait|\bhow long\b")),
     ("line_length", re.compile(r"\bline\b|\blines\b|\bqueue")),
-    ("crowd_level", re.compile(r"\bbusy\b|\bcrowd|\bpacked\b|\bfull\b|\bempty\b|\bpeople\b")),
+    ("crowd_level", re.compile(r"\bbusy\b|\bcrowd|\bpacked\b|\bfull\b|\bempty\b|\bpeople\b|\bcapacity\b")),
     ("equipment_availability", re.compile(r"treadmill|\bmachines?\b|\bequipment|\bprinters?\b|\bsquat|\bracks?\b|\bbikes?\b|\bcomputers?\b|\bscanners?\b|\bcourts?\b|\blockers?\b")),
     ("parking_availability", re.compile(r"\bparking\b|\bpark\b")),
     ("food_availability", re.compile(r"\bfood\b|\bmenu\b|\bsold out\b|\bpizza\b|\bcoffee\b")),
@@ -189,7 +190,7 @@ def detect_dimensions(text: str) -> list[str]:
     t = (text or "").lower()
     found = [key for key, pat in KEYWORDS if pat.search(t)]
     if not found:
-        found = ["crowd_level"]
+        found = ["other:answer"]
     return found[:MAX_CONTROLS]
 
 
@@ -220,6 +221,9 @@ def _assemble_plan(req: PlanRequest, keys: list[str], planner: str, canonical_in
     dims = dimensions or [make_dimension(k) for k in keys]
     keys = [d.key for d in dims]
     labels = " and ".join(d.label.lower() for d in dims)
+    asked = (req.text or "").strip()[:300]
+    if survey is not None and asked:
+        survey = survey.model_copy(update={"question": asked})
     return PlanResponse(
         canonical_intent=canonical_intent or f"Current {labels} at {req.place.name}",
         intent_key=f"{req.place.id}:{'+'.join(sorted(keys))}",
@@ -229,7 +233,7 @@ def _assemble_plan(req: PlanRequest, keys: list[str], planner: str, canonical_in
         clarification=None,
         survey=survey
         or Survey(
-            question=question or _survey_question(req.place.name, keys),
+            question=asked or question or _survey_question(req.place.name, keys),
             controls=[build_control(k) for k in keys[:MAX_CONTROLS]],
             allow_note=True,
         ),

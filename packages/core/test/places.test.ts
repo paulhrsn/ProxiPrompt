@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveCatalogPlace } from "../src/places";
+import { CATALOG_PLACES, describeLocation, resolveCatalogPlace } from "../src/places";
 
 describe("resolveCatalogPlace", () => {
   it("matches Shapiro aliases", () => {
@@ -11,5 +11,30 @@ describe("resolveCatalogPlace", () => {
 
   it("prefers the longer alias", () => {
     expect(resolveCatalogPlace("south quad dining vs the union")?.id).toBe("south-quad-dining");
+  });
+});
+
+describe("describeLocation", () => {
+  it("does not pick between Duderstadt and Pierpont when the fix is between them", () => {
+    const reading = describeLocation(42.2909, -83.7157);
+    expect(reading.ambiguous).toBe(true);
+    expect(reading.places.map((p) => p.id).sort()).toEqual(["duderstadt-center", "pierpont-commons"]);
+    expect(reading.label.startsWith("Between ")).toBe(true);
+    expect(reading.label).toContain("42.2909, -83.7157");
+  });
+
+  it("names a building when the fix is on that building and the neighbor is clearly farther", () => {
+    const shapiro = CATALOG_PLACES.find((p) => p.id === "shapiro-undergraduate-library")!;
+    const reading = describeLocation(shapiro.lat, shapiro.lng);
+    expect(reading.ambiguous).toBe(false);
+    expect(reading.places.map((p) => p.id)).toEqual(["shapiro-undergraduate-library"]);
+    expect(reading.label.startsWith("Near Shapiro")).toBe(true);
+  });
+
+  it("returns only coordinates when nothing in the catalog is nearby", () => {
+    const reading = describeLocation(40, -80);
+    expect(reading.places).toEqual([]);
+    expect(reading.ambiguous).toBe(false);
+    expect(reading.label).toBe("40.0000, -80.0000");
   });
 });

@@ -74,3 +74,25 @@ export function selectResponders(input: SelectInput): SelectResult {
   eligible.sort((a, b) => a.distanceM - b.distanceM);
   return { selected: eligible.slice(0, Math.max(0, count)), excluded };
 }
+
+/**
+ * How many new people to ask. Returns 0 while the current group still has
+ * time to answer. A later wave is the same size as the first, never the
+ * rest of the cap at once.
+ */
+export function nextWaveCount(input: {
+  alreadyAsked: number;
+  stillWaiting: number;
+  maxRecipients: number;
+  waveSize: number;
+  msSinceLastWave: number;
+  expandAfterMs: number;
+}): number {
+  const room = Math.max(0, input.maxRecipients - input.alreadyAsked);
+  if (room === 0 || input.waveSize <= 0) return 0;
+  if (input.alreadyAsked === 0) return Math.min(input.waveSize, room);
+  const everyoneAnswered = input.stillWaiting <= 0;
+  const timedOut = input.msSinceLastWave >= input.expandAfterMs;
+  if (!everyoneAnswered && !timedOut) return 0;
+  return Math.min(input.waveSize, room);
+}

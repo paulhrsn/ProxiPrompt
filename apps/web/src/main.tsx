@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { AuthRoot } from "./auth";
 import App from "./App";
 import { SpacetimeProvider } from "./spacetime";
 import "./styles.css";
@@ -12,8 +13,10 @@ if ("serviceWorker" in navigator) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <SpacetimeProvider>
-      <App />
-    </SpacetimeProvider>
+    <AuthRoot>
+      <SpacetimeProvider>
+        <App />
+      </SpacetimeProvider>
+    </AuthRoot>
   </StrictMode>,
 );

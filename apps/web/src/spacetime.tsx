@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DbConnection } from "../../../spacetimedb/bindings/index.js";
+import { useDevMode, useOidc } from "./auth";
 
 const URI = import.meta.env.VITE_SPACETIMEDB_URI || "ws://127.0.0.1:3000";
 const DB = import.meta.env.VITE_SPACETIMEDB_DB || "proxiprompt";
@@ -33,6 +34,9 @@ interface Store {
 const Ctx = createContext<Store>({ conn: null, identityHex: "", connected: false, error: "", tick: 0 });
 
 export function SpacetimeProvider({ children }: { children: ReactNode }) {
+  const { dev } = useDevMode();
+  const auth = useOidc();
+  const idToken = auth?.user?.id_token;
   const [conn, setConn] = useState<Conn | null>(null);
   const [identityHex, setIdentityHex] = useState("");
   const [connected, setConnected] = useState(false);
@@ -41,15 +45,22 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
   const bump = () => setTick((n) => n + 1);
 
   useEffect(() => {
+    if (!dev && !idToken) {
+      setConn(null);
+      setConnected(false);
+      setIdentityHex("");
+      return;
+    }
+
     let closed = false;
-    const token = localStorage.getItem(TOKEN_KEY) || undefined;
+    const token = dev ? localStorage.getItem(TOKEN_KEY) || undefined : idToken;
     const c = DbConnection.builder()
       .withUri(URI)
       .withDatabaseName(DB)
       .withToken(token)
       .onConnect((connection, identity, tok) => {
         if (closed) return;
-        localStorage.setItem(TOKEN_KEY, tok);
+        if (dev) localStorage.setItem(TOKEN_KEY, tok);
         setIdentityHex(identity.toHexString());
         setConnected(true);
         setError("");
@@ -76,7 +87,7 @@ export function SpacetimeProvider({ children }: { children: ReactNode }) {
       clearInterval(ping);
       c.disconnect();
     };
-  }, []);
+  }, [dev, idToken]);
 
   const value = useMemo(() => ({ conn, identityHex, connected, error, tick }), [conn, identityHex, connected, error, tick]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -88,4 +99,8 @@ export function useDb() {
 
 export function list<T>(iter: Iterable<T> | undefined): T[] {
   return iter ? [...iter] : [];
+}
+
+export function clearLegacyToken() {
+  localStorage.removeItem(TOKEN_KEY);
 }

@@ -113,9 +113,9 @@ Flow:
 2. Worker sees it, calls agent `plan`. Refusal → `refused`. Clarification (rare; only when two plausible interpretations need materially different evidence) → `clarifying`; `answer_clarification` reducer returns to `planning`.
 3. Worker clamps TTL/radius/count, then looks for an active job at the same place whose dimension set overlaps (Jaccard ≥ 0.5) → attach query. Otherwise create a job.
 4. Worker scores fresh observations for the place. Sufficient → `synthesizing`. Else create a prompt batch and select responders.
-5. Responder selection: location fresh, within radius (clamped 50–500 m, default 150), not the requester, has active push device, not notifications-blocked, not in cooldown, not already a recipient for this job. Rank by distance then reliability. First wave 2; expand to max 5 total after `EXPAND_AFTER_S` if still insufficient.
+5. Responder selection: location fresh, within radius (clamped 50–500 m, default 150), not the requester, has active push device, not notifications-blocked, not in cooldown, not already a recipient for this job. Rank by distance then reliability. First wave is 2. If that group has not produced a sufficient answer after `EXPAND_AFTER_S`, or everyone in it has already responded, ask a new group of 2 who have not been asked. Repeat until the answer is sufficient, nobody new is nearby, or the job reaches 5 recipients.
 6. `submit_response` reducer: only selected recipients, once per batch (unique), within expiry. Each answer becomes observations (`verified_nearby` = recipient selection was proximity-based on a fresh location).
-7. Worker re-scores on each response. Stops when sufficient, when all recipients answered and no expansion is useful, or at `JOB_DEADLINE_S`.
+7. Worker re-scores on each response. Stops when sufficient, when no further wave is available, or at `JOB_DEADLINE_S`.
 8. Worker calls agent `synthesize` per attached query with explicit evidence bundle and deterministic confidence. Writes answer → `answered`, or `insufficient` if no usable evidence. Notifies requester via push.
 9. Late responses still become observations; if they materially change an answered query, the worker writes an updated answer and notifies "Updated answer".
 

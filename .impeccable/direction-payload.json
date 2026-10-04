@@ -1,0 +1,68 @@
+{
+  "title": "Choose the visual world",
+  "question": "Quieter pass. Keep the pressed leaf, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Pressed leaf",
+      "kicker": "THE ROLL",
+      "lineage": "One specimen on a blank page",
+      "thesis": "One place, one fact, a lot of empty paper. Age is how faint the leaf has become.",
+      "palette": ["#f7f4ee", "#2a2824", "#7d8f72", "#c4b7a6"],
+      "materials": ["warm paper", "a single flat leaf shape", "graphite caption"],
+      "viewport": "ProxiPrompt as a nearly blank page. The place name is a small caption. The question is the only line you can write.",
+      "risk": "So quiet that a new prompt is easy to miss."
+    },
+    {
+      "id": "challenger-botanical",
+      "label": "Botanical plate",
+      "lineage": "A folio that follows one plant through the year",
+      "thesis": "Fresh, aging, and gone are seasons of the same place, drawn at one scale.",
+      "case": "Makes evidence age visible without badges. Five plates is more furniture than you asked for.",
+      "palette": ["#f4efe4", "#3d342c", "#6e8f62", "#9a3b32"],
+      "materials": ["cream plate", "sepia hairline", "one plant, no photograph"],
+      "viewport": "A single plate. The place is the specimen. The ask sits in the caption.",
+      "risk": "Starts to feel like a nature book instead of a question.",
+      "hero": "https://impeccable.style/worlds/cards/editorial-sequence-montage-botanical-folio-season-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/editorial-sequence-montage-botanical-folio-season.webp"
+    },
+    {
+      "id": "challenger-console",
+      "label": "Graphite panels",
+      "lineage": "A dark working console",
+      "thesis": "Panels stay put. One accent. Destructive actions sit alone.",
+      "case": "Fuses poorly. Hairline seams and a dark console are the sharp system this pass was meant to leave.",
+      "palette": ["#2a2d31", "#e8e6e3", "#7f9e8a"],
+      "materials": ["graphite", "one-pixel seams"],
+      "viewport": "A dark panel with the ask in one well and the list in another.",
+      "risk": "Looks like a developer tool.",
+      "hero": "https://impeccable.style/worlds/cards/digital-design-canon-dark-first-developer-console-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/digital-design-canon-dark-first-developer-console.webp"
+    },
+    {
+      "id": "challenger-posters",
+      "label": "Poster wall",
+      "lineage": "A streaming row of title cards",
+      "thesis": "Each place is a tile. The one you are on grows. The rest step back.",
+      "case": "Fuses poorly. A wall of pictures fights both the empty page and the request to avoid generated images.",
+      "palette": ["#161616", "#f2f2f2", "#d7c4a3"],
+      "materials": ["poster tiles", "one focused border"],
+      "viewport": "Horizontal rows of place tiles, one expanded.",
+      "risk": "Becomes a gallery instead of a question.",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-streaming-title-card-wall-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/pop-culture-shelf-streaming-title-card-wall.webp"
+    }
+  ],
+  "reroll": true,
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "lineage": "A location chat app",
+    "thesis": "A dark composer, a feed of cards, and a bottom tab bar, played straight.",
+    "palette": ["#0e1412", "#e8efe9", "#e8b86d"],
+    "materials": ["near-black ground", "one amber button"],
+    "viewport": "ProxiPrompt name, a question box, then a scroll of place cards.",
+    "risk": "Looks like every other campus app."
+  },
+  "steer": true
+}

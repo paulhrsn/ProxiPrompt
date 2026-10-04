@@ -1,3 +1,5 @@
+import { haversineM } from "./geo";
+
 export interface CatalogPlace {
   id: string;
   name: string;
@@ -48,4 +50,43 @@ export function resolveCatalogPlace(text: string): CatalogPlace | undefined {
 
 export function findCatalogPlace(id: string): CatalogPlace | undefined {
   return CATALOG_PLACES.find((p) => p.id === id);
+}
+
+/** A catalog name is only offered inside this radius. */
+const NAMED_WITHIN_M = 400;
+/** A second building is a real alternative when it is this close to the first. */
+const AMBIGUOUS_GAP_M = 80;
+
+export interface LocationDescription {
+  coords: string;
+  /** Nearest catalog places inside the naming radius, nearest first. At most two. */
+  places: CatalogPlace[];
+  /** True when the two nearest buildings are too close to pick a winner. */
+  ambiguous: boolean;
+  label: string;
+}
+
+/**
+ * Name a GPS fix from the catalog without claiming one building when two are
+ * about equally close. The coordinates themselves are unchanged.
+ */
+export function describeLocation(lat: number, lng: number, places: readonly CatalogPlace[] = CATALOG_PLACES): LocationDescription {
+  const coords = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  const ranked = places
+    .map((place) => ({ place, distanceM: haversineM(lat, lng, place.lat, place.lng) }))
+    .filter((row) => row.distanceM < NAMED_WITHIN_M)
+    .sort((a, b) => a.distanceM - b.distanceM);
+  const first = ranked[0];
+  const second = ranked[1];
+  if (!first) return { coords, places: [], ambiguous: false, label: coords };
+  const ambiguous = !!second && second.distanceM - first.distanceM < AMBIGUOUS_GAP_M && second.distanceM < Math.max(first.distanceM * 1.45, first.distanceM + 45);
+  if (ambiguous && second) {
+    return {
+      coords,
+      places: [first.place, second.place],
+      ambiguous: true,
+      label: `Between ${first.place.name} and ${second.place.name} (${coords})`,
+    };
+  }
+  return { coords, places: [first.place], ambiguous: false, label: `Near ${first.place.name} (${coords})` };
 }

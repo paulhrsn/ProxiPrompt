@@ -4,6 +4,7 @@ import {
   getConfig,
   getDimension,
   scoreEvidence,
+  nextWaveCount,
   selectResponders,
   type PlanResponse,
   type ScoringObservation,
@@ -21,7 +22,7 @@ type Conn = DbConnection;
 const processedQueries = new Set<string>();
 const processedResponses = new Set<string>();
 const processedPosts = new Set<string>();
-const jobFirstPromptAt = new Map<string, number>();
+const jobLastWaveAt = new Map<string, number>();
 const lastEmptyWaveAt = new Map<string, number>();
 const lastImpactPush = new Map<string, number>();
 
@@ -315,7 +316,7 @@ async function promptWave(
   const existing = rows(conn.db.svcPromptRecipient.iter()).filter((r) => r.jobId === jobId);
   const remaining = cfg.MAX_RECIPIENTS - existing.length;
   if (remaining <= 0) return;
-  const want = Math.min(wave === "first" ? cfg.FIRST_WAVE : remaining, remaining);
+  const want = Math.min(cfg.FIRST_WAVE, remaining);
   if (want <= 0) return;
 
   const devices = rows(conn.db.svcDevice.iter()).filter((d) => d.active);
@@ -356,6 +357,7 @@ async function promptWave(
   });
   if (picked.selected.length === 0) {
     const key = String(jobId);
+    jobLastWaveAt.set(key, now);
     const last = lastEmptyWaveAt.get(key) ?? 0;
     if (now - last < 30_000) return;
     lastEmptyWaveAt.set(key, now);
@@ -370,12 +372,12 @@ async function promptWave(
   if (!survey) return;
   await conn.reducers.workerCreatePromptBatch({
     jobId,
-    question: survey.question,
+    question: (attached.map((q) => q.text.trim()).find(Boolean) || survey.question).slice(0, 300),
     controlsJson: JSON.stringify(survey.controls),
     expiresAtMicros: toMicros(now + cfg.PROMPT_EXPIRY_S * 1000),
     recipientIdentitiesJson: JSON.stringify(picked.selected.map((s) => s.userId)),
   });
-  jobFirstPromptAt.set(String(jobId), jobFirstPromptAt.get(String(jobId)) ?? now);
+  jobLastWaveAt.set(String(jobId), now);
 
   const batch = rows(conn.db.svcPromptBatch.iter())
     .filter((b) => b.jobId === jobId)
@@ -388,7 +390,7 @@ async function promptWave(
         { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
         {
           title: `Quick question about ${place.name}`,
-          body: survey.question,
+          body: (attached.map((q) => q.text.trim()).find(Boolean) || survey.question).slice(0, 140),
           url: `/respond/${batch?.id ?? ""}`,
           tag: `prompt-${batch?.id}`,
         },
@@ -400,7 +402,10 @@ async function promptWave(
     await conn.reducers.workerMarkNotified({ recipientId: r.id });
   }
   for (const q of attached) {
-    await event(conn, q.id, "asking", `Asking ${picked.selected.length} people near ${place.name}`);
+    const asking = wave === "expand"
+      ? `No answer yet. Asking ${picked.selected.length} more people near ${place.name}`
+      : `Asking ${picked.selected.length} people near ${place.name}`;
+    await event(conn, q.id, "asking", asking);
     if (q.status === "planning") {
       await conn.reducers.workerSetQueryStatus({ queryId: q.id, status: "collecting" });
     }
@@ -428,18 +433,35 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
       if (answered) await event(conn, q.id, "received", `Received ${answered} of ${recips.length || plan.responder_count}`);
     }
 
-    const started = toMs(job.createdAt);
-    const firstAt = jobFirstPromptAt.get(String(job.id)) ?? started;
     const pastDeadline = now >= toMs(job.deadlineAt);
-    const canExpand = now - firstAt >= cfg.EXPAND_AFTER_S * 1000 && recips.length < cfg.MAX_RECIPIENTS;
+    const lastNotified = recips.reduce((max, r) => {
+      const t = r.notifiedAt ? toMs(r.notifiedAt) : 0;
+      return t > max ? t : max;
+    }, 0);
+    const lastWaveAt = Math.max(lastNotified, jobLastWaveAt.get(String(job.id)) ?? 0);
+    const wantMore = nextWaveCount({
+      alreadyAsked: recips.length,
+      stillWaiting: recips.filter((r) => !r.responded).length,
+      maxRecipients: cfg.MAX_RECIPIENTS,
+      waveSize: cfg.FIRST_WAVE,
+      msSinceLastWave: lastWaveAt ? now - lastWaveAt : Number.POSITIVE_INFINITY,
+      expandAfterMs: cfg.EXPAND_AFTER_S * 1000,
+    });
 
     if (score.sufficient) {
       for (const q of attached) await synthesizeQuery(conn, q.id, plan, place, obs, score, false);
       await conn.reducers.workerSetJobStatus({ jobId: job.id, status: "done", confidenceJson: JSON.stringify(score) });
       continue;
     }
-    if (!pastDeadline && canExpand) {
+    if (!pastDeadline && recips.length > 0 && wantMore > 0) {
       await promptWave(conn, job.id, plan, place, cfg, now, "expand");
+      continue;
+    }
+    if (!pastDeadline && recips.length === 0) {
+      const lastTry = jobLastWaveAt.get(String(job.id)) ?? 0;
+      if (now - lastTry >= cfg.EXPAND_AFTER_S * 1000) {
+        await promptWave(conn, job.id, plan, place, cfg, now, "first");
+      }
       continue;
     }
     if (pastDeadline) {
