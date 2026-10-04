@@ -26,6 +26,25 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+const LOCAL_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
+
+/**
+ * The dev wipe must come from the developer's own browser on this machine:
+ * - a loopback socket (not the LAN; this server listens on 0.0.0.0);
+ * - no proxy forwarding headers (ngrok adds X-Forwarded-For, and Vite passes it on);
+ * - the custom X-ProxiPrompt-Dev header, which a cross-site page cannot send without a CORS
+ *   preflight, and the preflight below does not allow it;
+ * - no Origin, or a localhost one.
+ */
+export function isLocalDevRequest(req: IncomingMessage): boolean {
+  const addr = req.socket.remoteAddress ?? "";
+  if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(addr)) return false;
+  if (Object.keys(req.headers).some((h) => h === "forwarded" || h.startsWith("x-forwarded-"))) return false;
+  if (req.headers["x-proxiprompt-dev"] !== "1") return false;
+  const origin = req.headers.origin;
+  return !origin || LOCAL_ORIGIN.test(origin);
+}
+
 function json(res: ServerResponse, code: number, body: unknown) {
   res.writeHead(code, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
   res.end(JSON.stringify(body));
@@ -133,8 +152,12 @@ export function startAsiServer(
         return;
       }
       // Dev only: the web app's "Wipe activity" button. Opt-in so a deployed orchestrator
-      // never exposes it; POST so a link or prefetch cannot trigger it.
+      // never exposes it; POST so a link or prefetch cannot trigger it; local-only (above).
       if (req.method === "POST" && url.pathname === "/dev/wipe" && process.env.ENABLE_DEV_WIPE === "1") {
+        if (!isLocalDevRequest(req)) {
+          json(res, 403, { error: "dev wipe is only available from the local web app on this machine" });
+          return;
+        }
         const conn = getConn();
         if (!conn) {
           json(res, 503, { error: "orchestrator is not connected to SpacetimeDB" });

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { startAsiServer } from "../src/asi";
 
 let server: Server | null = null;
+const DEV = { "X-ProxiPrompt-Dev": "1" };
 
 async function start(conn: unknown, onWipe = () => {}) {
   server = startAsiServer(() => conn as never, 0, { onDevWipe: onWipe });
@@ -31,7 +32,7 @@ describe("POST /dev/wipe", () => {
     const workerDevWipe = vi.fn().mockResolvedValue(undefined);
     const onWipe = vi.fn();
     const base = await start({ reducers: { workerDevWipe } }, onWipe);
-    const res = await fetch(`${base}/dev/wipe`, { method: "POST" });
+    const res = await fetch(`${base}/dev/wipe`, { method: "POST", headers: DEV });
     expect(res.status).toBe(200);
     expect(workerDevWipe).toHaveBeenCalledTimes(1);
     expect(onWipe).toHaveBeenCalledTimes(1);
@@ -48,6 +49,41 @@ describe("POST /dev/wipe", () => {
   it("reports 503 when the orchestrator is not connected", async () => {
     vi.stubEnv("ENABLE_DEV_WIPE", "1");
     const base = await start(null);
-    expect((await fetch(`${base}/dev/wipe`, { method: "POST" })).status).toBe(503);
+    expect((await fetch(`${base}/dev/wipe`, { method: "POST", headers: DEV })).status).toBe(503);
+  });
+
+  describe("only the developer's own machine can wipe", () => {
+    async function wipeWith(headers: Record<string, string>) {
+      vi.stubEnv("ENABLE_DEV_WIPE", "1");
+      const workerDevWipe = vi.fn().mockResolvedValue(undefined);
+      const base = await start({ reducers: { workerDevWipe } });
+      const res = await fetch(`${base}/dev/wipe`, { method: "POST", headers });
+      return { status: res.status, called: workerDevWipe.mock.calls.length };
+    }
+
+    it("refuses requests forwarded through ngrok or another proxy", async () => {
+      expect(await wipeWith({ ...DEV, "X-Forwarded-For": "203.0.113.9" })).toEqual({ status: 403, called: 0 });
+    });
+
+    it("refuses a plain cross-site POST (no custom header means no CORS preflight)", async () => {
+      expect(await wipeWith({})).toEqual({ status: 403, called: 0 });
+    });
+
+    it("refuses a page from another origin", async () => {
+      expect(await wipeWith({ ...DEV, Origin: "https://evil.example" })).toEqual({ status: 403, called: 0 });
+    });
+
+    it("accepts the local web app", async () => {
+      expect(await wipeWith({ ...DEV, Origin: "http://localhost:5173" })).toEqual({ status: 200, called: 1 });
+      server?.close();
+      expect(await wipeWith({ ...DEV, Origin: "http://127.0.0.1:5173" })).toEqual({ status: 200, called: 1 });
+    });
+
+    it("does not let the custom header through CORS preflight", async () => {
+      vi.stubEnv("ENABLE_DEV_WIPE", "1");
+      const base = await start({ reducers: { workerDevWipe: vi.fn() } });
+      const res = await fetch(`${base}/dev/wipe`, { method: "OPTIONS" });
+      expect(res.headers.get("access-control-allow-headers") ?? "").not.toMatch(/x-proxiprompt-dev/i);
+    });
   });
 });

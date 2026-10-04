@@ -1130,7 +1130,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
           <span>Developer diagnostics</span>
           <input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); localStorage.setItem("pp.diag", e.target.checked ? "1" : "0"); }} />
         </label>
-        {import.meta.env.DEV ? <DevWipeButton onDone={setToast} /> : null}
+        {import.meta.env.DEV && ["localhost", "127.0.0.1"].includes(location.hostname) ? <DevWipeButton onDone={setToast} /> : null}
         <button
           type="button"
           onClick={() => {
@@ -1148,7 +1148,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
 }
 
 /**
- * Dev builds only. Clears questions, prompts, answers, posts and reports for everyone;
+ * Dev builds on localhost only. Clears questions, prompts, answers, posts and reports for everyone;
  * accounts, locations, push devices and places stay. Needs two taps.
  */
 function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
@@ -1169,8 +1169,9 @@ function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
         setArmed(false);
         setBusy(true);
         try {
-          // Relative: the Vite dev server proxies /dev to the orchestrator, on localhost and ngrok.
-          const res = await fetch("/dev/wipe", { method: "POST" });
+          // Relative: the Vite dev server proxies /dev to the orchestrator. The orchestrator only
+          // accepts it from this machine (no ngrok), with this header.
+          const res = await fetch("/dev/wipe", { method: "POST", headers: { "X-ProxiPrompt-Dev": "1" } });
           onDone(res.ok ? "All activity wiped" : `Wipe failed (${res.status}). Is ENABLE_DEV_WIPE=1 set?`);
         } catch (e) {
           onDone(`Wipe failed: ${(e as Error).message}`);
