@@ -74,7 +74,7 @@ Goal (Paul): take the 4 open items; Sonnet subagents implement, Opus orchestrate
 | Lane | Item | Branch / worktree | Isolation | Status |
 |---|---|---|---|---|
 | L1 | e2e suite isolation: canonical then watch flake on shared `proxiprompt-test` | `fix/e2e-isolation` / `../ProxiPrompt-lanes/fix-e2e-isolation` | sole owner of `proxiprompt-test`, ports 8081/5174 | dispatched |
-| L2 | shared bridge token on `/asi/query` (safe hosted deploy) | `feat/asi-bridge-token` / `../ProxiPrompt-lanes/feat-asi-bridge-token` | orchestrator `asi.ts` + agent `bridge.py`; no DB | dispatched |
+| L2 | shared bridge token on `/asi/query` (safe hosted deploy) | `feat/asi-bridge-token` / `../ProxiPrompt-lanes/feat-asi-bridge-token` | orchestrator `asi.ts` + agent `bridge.py`; no DB | **merged** (`f33071a`) |
 | L3 | PROGRESS "Known issues" cleanup (stale lines) | `docs/known-issues` / `../ProxiPrompt-lanes/docs-known-issues` | only the Known issues section | **merged** (`0e372f9`) |
 | L4 | reciprocal priority (P1): people who answer get answered first | `feat/reciprocal-priority` / `../ProxiPrompt-lanes/feat-reciprocal-priority` | own DB `proxiprompt-test-recip`; no browser e2e (orchestrator runs it after merge) | dispatched |
 
@@ -85,6 +85,7 @@ Events:
 - L1-L4 dispatched in parallel to Sonnet workers.
 - L3 done `0e372f9`: Known issues rewritten (e2e path corrected, stale VAPID line replaced with the real gap: iPhone push untested, ASI:One status line removed, env-file and human-only bullets added, reciprocal marked in progress). Orchestrator verified: diff touches only that section, 0 dashes, e2e guard claim matches `services/orchestrator/scripts/e2e.ts`. Merged to main.
 - L2 reported `c7bc659`: `ORCH_BRIDGE_TOKEN` gates both `/asi/query` routes (constant-time compare, 401), fails closed with 503 on a non-loopback `ORCH_HOST` with no token; `bridge.py` sends the Bearer header. Orchestrator re-ran in the lane: orchestrator 55/55, agent 148/148, typecheck clean, 0 dashes. Sent back for one fix: orchestrator did not trim the token while the agent does (trailing space in a .env would 401 every chat).
+- L2 fix `4781aa4` (test, failed first) + `f33071a` (trim). Orchestrator re-verified: orchestrator 56/56, agent 148/148, typecheck clean. Merged to main; orchestrator suite 56/56 on main after merge.
 
 ## Work log
 - 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
