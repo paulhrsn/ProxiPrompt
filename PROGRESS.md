@@ -191,7 +191,7 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 ```
 
 ## Known issues / blockers
-- **Hosted deploy:** the orchestrator binds 127.0.0.1 unless `ORCH_HOST` is set. Setting `ORCH_HOST=0.0.0.0` reopens `/asi/query` (submits as the service identity, no auth beyond the 60/h service cap); add a shared bridge token before exposing it.
+- **Hosted deploy:** the agent binds 127.0.0.1 unless `AGENT_HOST` is set (needed only for `AGENT_ENDPOINT` inbound mode; mailbox mode is fine on loopback). The orchestrator binds 127.0.0.1 unless `ORCH_HOST` is set. Setting `ORCH_HOST=0.0.0.0` reopens `/asi/query` (submits as the service identity, no auth beyond the 60/h service cap); add a shared bridge token before exposing it.
 - Spacetime `start` dies when the launching shell exits unless you keep that process (use a dedicated terminal).
 - **One orchestrator per database.** `scripts/e2e.ts` drives `tick()` in-process, so running it while `pnpm dev`'s orchestrator is live makes the two workers race; the tells are "Invalid job transition done -> done" and "Recipient … was already asked about this job". Stop the dev stack before running e2e. SPEC §2 assumes a single worker; concurrent workers are not a supported configuration.
 - Physical iOS Web Push is unwired until VAPID keys exist; e2e used `https://push.example/…` dummy devices so routing still required `register_device`.

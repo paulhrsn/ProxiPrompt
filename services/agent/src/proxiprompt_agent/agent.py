@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from uagents import Agent, Context, Model, Protocol
+from uagents import asgi as uagents_asgi
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement,
     ChatMessage,
@@ -175,6 +176,11 @@ if os.environ.get("AGENT_HANDLE", "").strip():
     _agent_kwargs["handle"] = os.environ["AGENT_HANDLE"].strip()
 
 agent = Agent(**_agent_kwargs)
+
+# uagents hard-codes 0.0.0.0. /plan spends the ASI:One key, so stay on loopback unless the
+# agent must take inbound traffic (AGENT_ENDPOINT mode on a host): then set AGENT_HOST=0.0.0.0.
+# Mailbox mode is outbound-only and works on loopback.
+uagents_asgi.HOST = os.environ.get("AGENT_HOST", "").strip() or "127.0.0.1"
 
 
 @agent.on_rest_get("/health", HealthRespW)

@@ -79,3 +79,12 @@ async def test_summarize_post_over_rest(client):
     assert r.status_code == 200, r.text
     out = SummarizePostResponse.model_validate(r.json())
     assert {c.dimension for c in out.claims} >= {"noise_level", "seating_availability"}
+
+
+def test_agent_server_binds_loopback_by_default():
+    """/plan spends the ASI:One key; on 0.0.0.0 anyone on the network could call it."""
+    import uagents.asgi
+
+    from proxiprompt_agent import agent  # noqa: F401  (import applies the bind host)
+
+    assert uagents.asgi.HOST == "127.0.0.1"
