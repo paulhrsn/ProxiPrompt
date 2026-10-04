@@ -11,6 +11,7 @@ import re
 import unicodedata
 
 MAX_QUESTION_CHARS = 200
+MAX_INPUT_CHARS = 1000  # every regex below runs on at most this much text
 MIN_LETTERS = 3
 
 # N1: zero-width, bidi-control and other format characters (category Cf) plus C0/C1 controls.
@@ -22,7 +23,15 @@ _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
 _HANDLE = re.compile(r"(?<!\w)@\w{2,}")
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d{1,2}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\w)|(?<!\w)\d{3}[\s.-]\d{4}(?!\w)")
 
-_FILLER_TAIL = re.compile(r"(?:[\s,]*\b(?:lmk|pls|plz|please|thanks|thx|ty|asap)\b[\s!.?,]*)+$", re.I)
+# One trailing filler word at a time (stripped in a loop). A single regex with a repeated
+# group here backtracks catastrophically on "lmk, lmk, lmk, ... x".
+_FILLER_WORD = re.compile(r"[\s,]*\b(?:lmk|pls|plz|please|thanks|thx|ty|asap)\b[\s!.?,]*$", re.I)
+
+
+def _strip_filler_tail(s: str) -> str:
+    while m := _FILLER_WORD.search(s):
+        s = s[: m.start()]
+    return s
 
 
 def _strip_invisible(text: str) -> str:
@@ -53,7 +62,7 @@ def _truncate(text: str, limit: int) -> str:
 
 def normalize_question(text: str) -> str:
     """Apply N1-N8. Returns "" when nothing meaningful is left."""
-    s = unicodedata.normalize("NFKC", text or "")  # N1
+    s = unicodedata.normalize("NFKC", (text or "")[:MAX_INPUT_CHARS])  # N1
     s = _strip_invisible(s)  # N1
     for pattern in (_URL, _EMAIL, _HANDLE, _PHONE):  # N7
         s = pattern.sub(" ", s)
@@ -62,7 +71,7 @@ def normalize_question(text: str) -> str:
     s = re.sub(r"[?!]{2,}", lambda m: "?" if "?" in m.group(0) else "!", s)  # N3
     s = re.sub(r"(\w)\1{3,}", r"\1\1\1", s)  # N4
     s = _unshout(s)  # N5
-    s = _FILLER_TAIL.sub("", s).strip()  # N6
+    s = _strip_filler_tail(s)  # N6
     s = s.strip(" ,;:-")
     if not s:
         return ""

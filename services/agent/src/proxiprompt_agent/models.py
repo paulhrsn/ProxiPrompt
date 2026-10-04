@@ -235,7 +235,7 @@ class Refusal(_Base):
 
 class PlanRequest(_Base):
     query_id: str
-    text: str
+    text: str = Field(max_length=1000)  # submit_query caps at 300; this bounds direct /plan calls
     place: Place
     now_iso: str = ""
     recent_evidence: list[RecentEvidence] = Field(default_factory=list)

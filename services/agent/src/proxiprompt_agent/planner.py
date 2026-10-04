@@ -283,8 +283,17 @@ def _assemble_plan(req: PlanRequest, keys: list[str], planner: str, canonical_in
     )
 
 
+def guard_input(text: str, place_name: str) -> str | None:
+    """Deterministic checks (SPEC §9.1 steps 1-3). The keyword guard runs on the raw AND the
+    normalized text: normalization can reveal a phrase that fullwidth letters, zero-width
+    characters or an embedded link hid from the raw check, and the normalized text is what
+    responders would see."""
+    normalized = normalize_question(text)
+    return check_refusal(text, place_name) or check_refusal(normalized, place_name) or validate_question(normalized)
+
+
 def plan_heuristic(req: PlanRequest) -> PlanResponse:
-    reason = check_refusal(req.text, req.place.name) or validate_question(normalize_question(req.text))
+    reason = guard_input(req.text, req.place.name)
     if reason:
         return _refusal_plan(req, reason, "heuristic")
     return _assemble_plan(req, detect_dimensions(req.text), "heuristic")
@@ -455,7 +464,7 @@ async def review_question(req: PlanRequest) -> tuple[str, str | None]:
     if verdict == "rewrite":
         candidate = normalize_question(str(raw.get("question") or ""))
         if validate_question(candidate) is None:
-            return candidate, check_refusal(candidate, req.place.name)
+            return candidate, guard_input(candidate, req.place.name)
         return text, None
     if verdict != "ok":
         logger.warning("ASI:One input review returned unknown verdict %r; ignoring", verdict)
@@ -465,7 +474,7 @@ async def review_question(req: PlanRequest) -> tuple[str, str | None]:
 async def plan(req: PlanRequest) -> PlanResponse:
     planner_name = "llm" if llm.llm_enabled() else "heuristic"
     # Deterministic guards run before (and regardless of) the LLM.
-    reason = check_refusal(req.text, req.place.name) or validate_question(normalize_question(req.text))
+    reason = guard_input(req.text, req.place.name)
     if reason:
         return _refusal_plan(req, reason, planner_name)
     if not llm.llm_enabled():

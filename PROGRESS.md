@@ -60,6 +60,10 @@ Previously:
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
 ## Work log
+- 2026-10-03 session 6 (security review of `293dd9f`, 3 findings; 2 reproduced and fixed, the third arrived without detail):
+  1. **Keyword guard bypass via normalization.** `check_refusal` ran on raw text only, so "is ｍｙ ｅｘ there", zero-width splits, or "my https://a.example ex" passed, then normalized into "Is my ex there?" for responders. New `planner.guard_input` checks raw + normalized + V1, used by `plan`, `plan_heuristic`, and review rewrites.
+  2. **ReDoS in N6.** The nested-quantifier filler regex hung on "lmk, " x 1000, and `PlanRequest.text` was unbounded. Filler now stripped one word per pass; input capped (model `max_length=1000`, normalization reads at most 1000). Worst case measured < 5 ms.
+  - Tests: agent 134 (13 new, all failing before the fix).
 - 2026-10-03 session 5 (post-push security review of `37fd1e8`, 2 findings, both fixed):
   1. **Freeform prompts quoted raw asker text.** Paul's call: quoting the asker is allowed, but only after input handling. New `services/agent/src/proxiprompt_agent/question_input.py` normalizes (N1-N8: NFKC + invisible chars, whitespace, punctuation runs, elongation, un-shout, filler, contact details stripped, capitalization + 200-char cap) and validates (V1: 3+ letters). With `ASI_ONE_API_KEY` set, `planner.review_question` asks ASI:One for `ok | rewrite | refuse` before planning; a rewrite is re-normalized and re-guarded, and a failed review falls back to the deterministic checks. Spec in SPEC §9.1. 40 new tests in `tests/test_question_input.py`.
   2. **ASI:One relay had no rate limit.** The service identity skipped the 10/h query cap entirely. It now has its own `SERVICE_QUERY_RATE_LIMIT_PER_HOUR = 60` (`spacetimedb/src/lib.ts`). New guardrail check confirmed failing on the old module (61 accepted), passing after publish.

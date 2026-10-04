@@ -168,7 +168,8 @@ LLM: ASI:One OpenAI-compatible API (`ASI_ONE_API_KEY`). When the key is absent t
 
 ### 9.1 Asker input handling (`services/agent/src/proxiprompt_agent/question_input.py`, `planner.review_question`)
 Runs in `/plan`, in this order. A failure at any step returns a `refusal`.
-1. **Keyword guard** (`check_refusal`) on the raw text: people, private places, surveillance.
+0. **Length bound:** `/plan` rejects `text` over 1000 characters; normalization reads at most 1000.
+1. **Keyword guard** (`check_refusal`) on the raw text AND the normalized text (step 2): people, private places, surveillance. Checking both stops fullwidth letters, zero-width characters or an embedded link from hiding a phrase that normalization would then reveal to responders.
 2. **Normalization** (deterministic; tidies, never paraphrases):
    - N1 Unicode NFKC; strip control, zero-width and bidi characters.
    - N2 collapse whitespace.
