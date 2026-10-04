@@ -60,7 +60,7 @@ const LOOPBACK_HOSTS = ["127.0.0.1", "::1", "localhost"];
  * Returns true when it has already answered the request.
  */
 function rejectBridge(req: IncomingMessage, res: ServerResponse): boolean {
-  const token = process.env.ORCH_BRIDGE_TOKEN ?? "";
+  const token = process.env.ORCH_BRIDGE_TOKEN?.trim() ?? "";
   if (!token) {
     const host = process.env.ORCH_HOST?.trim() || "127.0.0.1";
     if (LOOPBACK_HOSTS.includes(host)) return false;
