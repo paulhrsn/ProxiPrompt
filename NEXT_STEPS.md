@@ -14,7 +14,7 @@ Paul's working preferences that apply to all of this:
 
 | Piece | Where | Port | Role |
 |---|---|---|---|
-| SpacetimeDB module | `spacetimedb/src/*.ts` | 3000 | The database AND the rule engine. 17 tables, 34 reducers (18 client, 16 worker), 23 views. Holds all state, enforces every safety rule, and pushes live updates to every subscriber. Reducers cannot do network I/O. |
+| SpacetimeDB module | `spacetimedb/src/*.ts` | 3000 | The database AND the rule engine. 22 tables, 45 reducers (20 client, 25 worker or scheduled), 27 views. Holds all state, enforces every safety rule, and pushes live updates to every subscriber. Reducers cannot do network I/O. |
 | Orchestrator | `services/orchestrator/src` | 8080 | The dispatcher. Subscribes to the database, calls the agent, picks who to ping, sends Web Push, decides when to synthesize. Runs `tick()` every 2 s (`src/index.ts:141`). Also serves `/places`, `/asi/query`, `/dev/wipe`, `/vapidPublicKey`. |
 | Agent | `services/agent/src/proxiprompt_agent` | 8001 | The brain. Python uAgent. `/plan`, `/synthesize`, `/summarize_post` use ASI:One as the LLM. Also implements the Fetch.ai Chat Protocol (ASI:One chat users reach it through the Agentverse mailbox). |
 | PWA | `apps/web/src/App.tsx` | 5173 | React app. Asker composer, live timeline, responder prompt sheet, Posts, You tab. |
