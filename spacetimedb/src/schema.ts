@@ -120,6 +120,20 @@ export const evidence_job = table(
     recipients_count: t.u32(),
     confidence_json: t.string().optional(),
     svc: t.u8().index('btree'),
+    // Set by the scheduled deadline reducer when fresh evidence exists, so the
+    // orchestrator synthesizes without owning the clock. False until then.
+    // Appended, with a default, so publishing does not reorder existing rows.
+    deadline_passed: t.bool().default(false),
+  }
+);
+
+// The database fires job_deadline_reached when scheduled_at is reached, even if the worker is down.
+export const job_deadline_schedule = table(
+  { name: 'job_deadline_schedule' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+    job_id: t.u64().index('btree'),
   }
 );
 
@@ -261,6 +275,36 @@ export const rate_bucket = table(
   }
 );
 
+// A standing "tell me when..." request. The worker fills target_json after planning.
+// The database expires it; the worker only notices new evidence.
+export const watch = table(
+  { name: 'watch' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    place_id: t.string().index('btree'),
+    text: t.string(),
+    idem_key: t.string().unique(),
+    dimension_keys_json: t.string(),
+    target_json: t.string(),
+    status: t.string(), // planning | active | expired | cancelled
+    last_value: t.string(),
+    last_notified_at: t.timestamp().optional(),
+    created_at: t.timestamp(),
+    expires_at: t.timestamp(),
+    svc: t.u8().index('btree'),
+  }
+);
+
+export const watch_expiry_schedule = table(
+  { name: 'watch_expiry_schedule' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+    watch_id: t.u64().index('btree'),
+  }
+);
+
 export const service_role = table(
   { name: 'service_role' },
   {
@@ -278,6 +322,7 @@ const spacetimedb = schema({
   query,
   query_event,
   evidence_job,
+  job_deadline_schedule,
   prompt_batch,
   prompt_recipient,
   prompt_response,
@@ -287,6 +332,8 @@ const spacetimedb = schema({
   impact_event,
   report,
   rate_bucket,
+  watch,
+  watch_expiry_schedule,
   service_role,
 });
 export default spacetimedb;

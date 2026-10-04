@@ -22,6 +22,7 @@ import spacetimedb, {
   report,
   user_location,
   user_profile,
+  watch,
 } from './schema';
 
 // ======================= per-sender views =======================
@@ -40,6 +41,10 @@ export const my_location = spacetimedb.view(
   t.option(user_location.rowType),
   (ctx) => ctx.db.user_location.identity.find(ctx.sender) ?? undefined
 );
+
+export const my_watches = spacetimedb.view({ name: 'my_watches', public: true }, t.array(watch.rowType), (ctx) => [
+  ...ctx.db.watch.owner.filter(ctx.sender),
+]);
 
 export const my_queries = spacetimedb.view({ name: 'my_queries', public: true }, t.array(query.rowType), (ctx) => [
   ...ctx.db.query.requester.filter(ctx.sender),
@@ -230,6 +235,12 @@ export const svc_user_location = spacetimedb.view(
     ctx.from.service_role
       .where((s) => s.identity.eq(ctx.sender))
       .rightSemijoin(ctx.from.user_location, (s, r) => s.svc.eq(r.svc))
+);
+
+export const svc_watch = spacetimedb.view({ name: 'svc_watch', public: true }, t.array(watch.rowType), (ctx) =>
+  ctx.from.service_role
+    .where((s) => s.identity.eq(ctx.sender))
+    .rightSemijoin(ctx.from.watch, (s, r) => s.svc.eq(r.svc))
 );
 
 export const svc_query = spacetimedb.view({ name: 'svc_query', public: true }, t.array(query.rowType), (ctx) =>

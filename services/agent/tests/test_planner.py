@@ -12,6 +12,46 @@ def plan_req(shapiro, text=SHAPIRO_Q):
     return PlanRequest(query_id="q1", text=text, place=shapiro, now_iso="2026-10-03T19:00:00Z", recent_evidence=[])
 
 
+def test_llm_plan_keeps_seats_the_model_folded_into_worth_it(shapiro):
+    """The canonical follow-up asks about a quiet seat. If the model never plans seats,
+    that question cannot reuse the first answer."""
+    raw = {
+        "canonical_intent": "Whether Shapiro is quiet enough to study",
+        "intent_key": "shapiro-undergraduate-library:noise_level+worth_it",
+        "decision": "Whether to go study",
+        "dimensions": [
+            {"key": "noise_level", "label": "Noise", "kind": "objective", "volatility": "high", "proposed_ttl_s": 900},
+            {"key": "worth_it", "label": "Worth it for studying", "kind": "subjective", "volatility": "medium", "proposed_ttl_s": 5400},
+        ],
+        "needs_clarification": False,
+        "clarification": None,
+        "survey": {
+            "question": "How quiet is Shapiro Undergraduate Library right now?",
+            "controls": [
+                {"dimension_key": "noise_level", "label": "Noise", "options": [
+                    {"value": "quiet", "label": "Quiet", "ordinal": 0},
+                    {"value": "moderate", "label": "Moderate", "ordinal": 1},
+                    {"value": "loud", "label": "Loud", "ordinal": 2},
+                ]},
+                {"dimension_key": "worth_it", "label": "Worth it", "options": [
+                    {"value": "no", "label": "No", "ordinal": 0},
+                    {"value": "maybe", "label": "Maybe", "ordinal": 1},
+                    {"value": "yes", "label": "Yes", "ordinal": 2},
+                ]},
+            ],
+            "allow_note": True,
+        },
+        "responder_radius_m": 150,
+        "responder_count": 2,
+        "refusal": None,
+    }
+    p = planner._repair_plan_dict(raw, plan_req(shapiro))
+    keys = [d.key for d in p.dimensions]
+    assert "noise_level" in keys
+    assert "seating_availability" in keys
+    assert "seating_availability" in {c.dimension_key for c in p.survey.controls}
+
+
 async def test_heuristic_plan_for_demo_question(shapiro):
     p = await planner.plan(plan_req(shapiro))
     keys = [d.key for d in p.dimensions]

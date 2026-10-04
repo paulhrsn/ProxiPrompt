@@ -31,7 +31,8 @@ export type QueryStatus = (typeof QUERY_STATUSES)[number];
 
 /** Allowed query transitions (SPEC §7 + task brief). Anything not listed is rejected. */
 export const QUERY_TRANSITIONS: Record<string, readonly string[]> = {
-  planning: ['clarifying', 'collecting', 'synthesizing', 'refused', 'failed', 'cancelled'],
+  // planning -> insufficient: the scheduled deadline can close a query the worker never finished.
+  planning: ['clarifying', 'collecting', 'synthesizing', 'insufficient', 'refused', 'failed', 'cancelled'],
   clarifying: ['planning', 'cancelled'],
   // collecting -> collecting and synthesizing -> synthesizing are no-ops, allowed on
   // purpose: the worker reads queries through a subscription that can lag its own writes,

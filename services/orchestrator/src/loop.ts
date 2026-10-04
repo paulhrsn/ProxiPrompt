@@ -7,6 +7,8 @@ import {
   haversineM,
   nearestCatalogPlace,
   scoreEvidence,
+  inferWatchTarget,
+  watchReading,
   nextWaveCount,
   placePart,
   selectResponders,
@@ -35,6 +37,7 @@ const lastImpactPush = new Map<string, number>();
 const lastReceivedEvent = new Map<string, string>();
 /** Evidence signature behind each finished answer, so late updates fire once per change. */
 const answeredSignature = new Map<string, string>();
+const processedWatches = new Set<string>();
 
 /** Clears all in-memory tick state. Tests call this between cases. */
 export function resetLoopState(): void {
@@ -48,6 +51,7 @@ export function resetLoopState(): void {
   lastImpactPush.clear();
   lastReceivedEvent.clear();
   answeredSignature.clear();
+  processedWatches.clear();
 }
 
 function rows<T>(iter: Iterable<T> | undefined): T[] {
@@ -125,6 +129,7 @@ export async function tick(conn: Conn): Promise<void> {
   await processPlanningQueries(conn, cfg, now);
   await advanceCollectingJobs(conn, cfg, now);
   await updateLateAnswers(conn, cfg, now);
+  await evaluateWatches(conn, now);
 }
 
 async function ingestResponses(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
@@ -288,6 +293,32 @@ async function summarizePendingPosts(conn: Conn, cfg: ReturnType<typeof getConfi
   }
 }
 
+/**
+ * A presence check uses one of the three survey slots. When the plan has more
+ * dimensions than the remaining slots, drop opinions before objective checks so
+ * a follow-up about seats or noise can reuse what was just collected.
+ */
+function fitPlanForPlace(
+  plan: PlanResponse,
+  place: { id: string; lat: number; lng: number },
+): PlanResponse {
+  if (!plan.survey || plan.refusal || plan.needs_clarification) return plan;
+  const needsPresence = Boolean(placePart(plan.survey.question) || hasAmbiguousNeighbor(place));
+  const slots = needsPresence ? MAX_PROMPT_CONTROLS - 1 : MAX_PROMPT_CONTROLS;
+  const controls = plan.survey.controls.filter((c) => c.dimension_key !== PRESENCE_KEY);
+  if (controls.length <= slots) return plan;
+  const kindOf = new Map(plan.dimensions.map((d) => [d.key, d.kind]));
+  const objective = controls.filter((c) => kindOf.get(c.dimension_key) !== "subjective");
+  const subjective = controls.filter((c) => kindOf.get(c.dimension_key) === "subjective");
+  const keptControls = [...objective, ...subjective].slice(0, slots);
+  const kept = new Set(keptControls.map((c) => c.dimension_key));
+  return {
+    ...plan,
+    dimensions: plan.dimensions.filter((d) => kept.has(d.key)),
+    survey: { ...plan.survey, controls: keptControls },
+  };
+}
+
 async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConfig>, now: number) {
   for (const q of rows(conn.db.svcQuery.iter())) {
     if (q.status !== "planning") continue;
@@ -297,7 +328,7 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
     if (!place) continue;
     const existing = scoringObs(conn, q.placeId, now);
     try {
-      const plan = await callPlan({
+      const plan = fitPlanForPlace(await callPlan({
         query_id: String(q.id),
         text: q.clarificationChoice ? `${q.text} (${q.clarificationChoice})` : q.text,
         place: { id: place.id, name: place.name, category: place.category, lat: place.lat, lng: place.lng },
@@ -310,7 +341,7 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
           age_s: (now - o.observedAtMs) / 1000,
           verified_nearby: o.verifiedNearby,
         })),
-      });
+      }), place);
       await conn.reducers.workerSetQueryPlan({ queryId: q.id, planJson: JSON.stringify(plan) });
 
       if (plan.refusal) {
@@ -543,7 +574,12 @@ async function promptWave(
       // The card already names the place above, so repeating it here just reads badly.
       ? { label: "Are you there right now?", passLabel: `I'm not at ${place.name}` }
       : null;
-  const dimensionControls = survey.controls.filter((c) => c.dimension_key !== PRESENCE_KEY);
+  const kindOf = new Map(plan.dimensions.map((d) => [d.key, d.kind]));
+  const dimensionControls = survey.controls
+    .filter((c) => c.dimension_key !== PRESENCE_KEY)
+    // A presence control costs one of the three slots. Keep objective checks (seats, noise)
+    // ahead of opinions so the dropped control is not the one a follow-up question needs.
+    .sort((a, b) => Number(kindOf.get(a.dimension_key) === "subjective") - Number(kindOf.get(b.dimension_key) === "subjective"));
   // The reducer accepts 1-3 controls and rejects the whole batch otherwise, so the presence
   // control costs one dimension slot rather than silently failing the wave.
   const controls = presence
@@ -653,7 +689,9 @@ async function advanceCollectingJobs(conn: Conn, cfg: ReturnType<typeof getConfi
       await event(conn, q.id, "received", message);
     }
 
-    const pastDeadline = now >= toMs(job.deadlineAt);
+    // The database flags the deadline on its own clock. The timestamp check remains
+    // so a job is not stuck when the schedule row was never written.
+    const pastDeadline = job.deadlinePassed || now >= toMs(job.deadlineAt);
     const lastNotified = recips.reduce((max, r) => {
       const t = r.notifiedAt ? toMs(r.notifiedAt) : 0;
       return t > max ? t : max;
@@ -902,6 +940,81 @@ async function synthesizeQuery(
         tag: `answer-${queryId}`,
       },
     );
+  }
+}
+
+async function evaluateWatches(conn: Conn, now: number) {
+  for (const w of rows(conn.db.svcWatch.iter())) {
+    if (w.status === "expired" || w.status === "cancelled") continue;
+    if (toMs(w.expiresAt) <= now) continue;
+    const place = placeOf(conn, w.placeId);
+    if (!place) continue;
+    let target = parseJson<ReturnType<typeof inferWatchTarget>>(w.targetJson, null);
+    if (w.status === "planning" || !target) {
+      const lock = String(w.id);
+      if (processedWatches.has(lock)) continue;
+      processedWatches.add(lock);
+      try {
+        const plan = await callPlan({
+          query_id: `watch-${w.id}`,
+          text: w.text,
+          place: { id: place.id, name: place.name, category: place.category, lat: place.lat, lng: place.lng },
+          now_iso: new Date(now).toISOString(),
+          recent_evidence: [],
+        });
+        const keys = plan.dimensions?.map((d) => d.key) ?? [];
+        target = inferWatchTarget(w.text, keys, plan.survey?.controls ?? []);
+        if (!target) {
+          await conn.reducers.workerRetireWatch({
+            watchId: w.id,
+            reason: "I can only watch for open seats or a quiet room.",
+          });
+          continue;
+        }
+        await conn.reducers.workerArmWatch({
+          watchId: w.id,
+          dimensionKeysJson: JSON.stringify(keys.length ? keys : [target.dimension]),
+          targetJson: JSON.stringify(target),
+        });
+      } catch (e) {
+        processedWatches.delete(lock);
+        console.warn("arm watch failed", w.id, (e as Error).message);
+      }
+      continue;
+    }
+    const reading = watchReading(
+      scoringObs(conn, w.placeId, now).map((o) => ({
+        dimension: o.dimension,
+        value: o.value,
+        valueLabel: o.valueLabel,
+        observedAtMs: o.observedAtMs,
+        expiresAtMs: o.expiresAtMs,
+        invalidated: o.invalidated,
+        sourceType: o.sourceType,
+      })),
+      target,
+      now,
+    );
+    if (!reading.met || !reading.valueLabel) {
+      if (w.lastValue) await conn.reducers.workerNoteWatch({ watchId: w.id, lastValue: "" });
+      continue;
+    }
+    if (w.lastValue === reading.valueLabel) continue;
+    await conn.reducers.workerNoteWatch({ watchId: w.id, lastValue: reading.valueLabel });
+    const owner = hexOf(w.owner);
+    const device = rows(conn.db.svcDevice.iter()).find((d) => hexOf(d.owner) === owner && d.active);
+    const n = reading.contributors;
+    if (device && pushEnabled()) {
+      await sendPush(
+        { endpoint: device.endpoint, p256dh: device.p256Dh, auth: device.auth },
+        {
+          title: `${target.phrase} at ${place.name}`,
+          body: `${reading.valueLabel} · ${n} report${n === 1 ? "" : "s"}`,
+          url: "/#/activity",
+          tag: `watch-${w.id}`,
+        },
+      );
+    }
   }
 }
 

@@ -21,7 +21,7 @@ export const MAX_RECIPIENTS_PER_JOB = 20;
 export const LOCATION_MAX_AGE_S = 21600;
 
 export const QUERY_TRANSITIONS: Record<string, readonly string[]> = {
-  planning: ["clarifying", "collecting", "synthesizing", "refused", "failed", "cancelled"],
+  planning: ["clarifying", "collecting", "synthesizing", "insufficient", "refused", "failed", "cancelled"],
   clarifying: ["planning", "cancelled"],
   collecting: ["collecting", "synthesizing", "answered", "insufficient", "failed", "cancelled"],
   synthesizing: ["synthesizing", "answered", "insufficient", "failed"],
@@ -62,7 +62,7 @@ export interface QueryRow {
 export interface QueryEventRow { id: bigint; queryId: bigint; kind: string; message: string; createdAt: Timestamp; svc: number }
 export interface EvidenceJobRow {
   id: bigint; clientKey: string; placeId: string; intentKey: string; dimensionKeysJson: string; status: string;
-  planJson: string; createdAt: Timestamp; deadlineAt: Timestamp; recipientsCount: number; confidenceJson?: string; svc: number;
+  planJson: string; createdAt: Timestamp; deadlineAt: Timestamp; deadlinePassed?: boolean; recipientsCount: number; confidenceJson?: string; svc: number;
 }
 export interface PromptBatchRow { id: bigint; jobId: bigint; placeId: string; question: string; controlsJson: string; createdAt: Timestamp; expiresAt: Timestamp; svc: number }
 export interface PromptRecipientRow { id: bigint; batchId: bigint; jobId: bigint; responder: Identity; notifiedAt?: Timestamp; responded: boolean; svc: number }
@@ -82,6 +82,11 @@ export interface UserLocationRow { identity: Identity; lat: number; lng: number;
 export interface UserProfileRow { identity: Identity; username: string; avatarSeed: string; defaultAttribution: string; notificationsPaused: boolean; isAdmin: boolean; createdAt: Timestamp; svc: number }
 export interface DeviceRow { id: bigint; owner: Identity; endpoint: string; p256Dh: string; auth: string; userAgent: string; active: boolean; createdAt: Timestamp; svc: number }
 export interface ImpactEventRow { id: bigint; contributor: Identity; sourceType: string; sourceId: string; queryId: bigint; kind: string; createdAt: Timestamp; dedupKey: string; svc: number }
+export interface WatchRow {
+  id: bigint; owner: Identity; placeId: string; text: string; status: string;
+  dimensionKeysJson: string; targetJson: string; lastValue: string;
+  expiresAt: Timestamp; svc: number;
+}
 
 interface Tables {
   place: PlaceRow[];
@@ -98,6 +103,7 @@ interface Tables {
   svcUserProfile: UserProfileRow[];
   svcDevice: DeviceRow[];
   svcImpactEvent: ImpactEventRow[];
+  svcWatch: WatchRow[];
 }
 
 /** A rejection from a reducer. The real module throws SenderError; the shape does not matter to loop.ts. */
@@ -129,6 +135,7 @@ export function makeFakeConn(now: number): FakeConn {
     place: [], svcQuery: [], svcQueryEvent: [], svcEvidenceJob: [], svcPromptBatch: [],
     svcPromptRecipient: [], svcPromptResponse: [], svcObservation: [], svcPost: [],
     svcComment: [], svcUserLocation: [], svcUserProfile: [], svcDevice: [], svcImpactEvent: [],
+    svcWatch: [],
   };
   const calls: { name: string; args: unknown }[] = [];
   const failures = new Set<string>();
@@ -233,7 +240,7 @@ export function makeFakeConn(now: number): FakeConn {
     rows.svcEvidenceJob.push({
       id: nextId("job"), clientKey: a.clientKey, placeId: a.placeId, intentKey: a.intentKey,
       dimensionKeysJson: a.dimensionKeysJson, status: "collecting", planJson: a.planJson,
-      createdAt: stamp(), deadlineAt: tsMicros(a.deadlineAtMicros), recipientsCount: 0, svc: 0,
+      createdAt: stamp(), deadlineAt: tsMicros(a.deadlineAtMicros), deadlinePassed: false, recipientsCount: 0, svc: 0,
     });
   });
 
@@ -363,6 +370,28 @@ export function makeFakeConn(now: number): FakeConn {
     },
   );
 
+  define<{ watchId: bigint; dimensionKeysJson: string; targetJson: string }>("workerArmWatch", (a) => {
+    const w = rows.svcWatch.find((row) => row.id === a.watchId);
+    if (!w) throw new ReducerError(`Watch ${a.watchId} not found`);
+    w.dimensionKeysJson = a.dimensionKeysJson;
+    w.targetJson = a.targetJson;
+    w.status = "active";
+  });
+
+  define<{ watchId: bigint; lastValue: string }>("workerNoteWatch", (a) => {
+    const w = rows.svcWatch.find((row) => row.id === a.watchId);
+    if (!w || w.status !== "active") return;
+    w.lastValue = a.lastValue;
+  });
+
+  define<{ watchId: bigint; reason: string }>("workerRetireWatch", (a) => {
+    const w = rows.svcWatch.find((row) => row.id === a.watchId);
+    if (!w || w.status === "expired" || w.status === "cancelled") return;
+    if (!a.reason.trim()) throw new ReducerError("reason must be at least 1 character");
+    w.status = "expired";
+    w.lastValue = a.reason.trim();
+  });
+
   // ---------- posts ----------
   define<{ postId: bigint; summary: string; claimsJson: string; freshnessState: string; freshnessNote: string }>(
     "workerSetPostSummary",
@@ -394,6 +423,7 @@ export function makeFakeConn(now: number): FakeConn {
     svcUserProfile: { iter: () => rows.svcUserProfile },
     svcDevice: { iter: () => rows.svcDevice },
     svcImpactEvent: { iter: () => rows.svcImpactEvent },
+    svcWatch: { iter: () => rows.svcWatch },
   };
   conn.reducers = reducers;
   conn.rows = rows;

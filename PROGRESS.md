@@ -8,14 +8,13 @@ Read `SPEC.md` first (the contract). This file is the operational state. **Every
 3. Run the verification commands in "Verification" to confirm the stated state is still true before building on it.
 
 ## Current objective
-**As of 2026-10-04 ~01:15 local: get every feature working in the laptop browser mock (two tabs: `localhost:5173` asker, `127.0.0.1:5173` responder) before phone testing.** Paul explicitly deferred physical-iPhone push testing until the browser flow is fully solid.
+**As of 2026-10-04 ~02:45 local: browser demo, scheduled deadlines, and watches are verified.** A watch now reports open seats even when the question's survey and the watch's survey use different option ids. Still human-only: SpacetimeAuth client ID, `spacetime login` for MainCloud, Agentverse handle, public chat link, demo video, Devpost, and iPhone push. Optional and not built: prompt-expiry and rate-bucket cleanup schedules.
 
 State at handoff:
-- Everything committed and pushed to `origin/main` (last: `a8b43b8`). Working tree clean.
-- Local stack running from this session (agent, orchestrator, Vite were restarted by hand, not by `dev.sh`; `scripts/dev.sh` now reproduces the same env by sourcing the git-ignored `.env` files). Restart everything with `pnpm dev` if in doubt.
+- Local stack: SpacetimeDB on :3000, agent on :8001, Vite on :5173. The live orchestrator was down at the start of this session and was started again on :8080 after publishing `proxiprompt` (no data wipe). Restart everything with `pnpm dev` if in doubt.
 - ASI:One is live both directions: the agent uses it as its LLM (`ASI_ONE_API_KEY`), and ASI:One chat reaches the agent through Agentverse mailbox (Fetch.ai track requirement met, verified with queries #37/#38).
 - Push (VAPID) keys exist; push to a laptop browser works after "Enable notifications" on the You tab. iPhone untested (needs Add to Home Screen from the HTTPS ngrok URL).
-- Agreed plan (Paul chose option "A" = pursue Fetch.ai): (1) Playwright browser e2e of the SPEC §14 script against `proxiprompt-test`, (2) fix what it finds, (3) "Watch a place" extension (proposed, Paul has not confirmed yet), then sponsor deliverables.
+- Agreed plan (Paul chose option "A" = pursue Fetch.ai): browser e2e, the bugs it found, and watches are done. What is left needs Paul: SpacetimeAuth, MainCloud, the Agentverse handle, a public chat link, the demo video, and Devpost.
 
 ## Status by plan to-do
 | to-do | status | notes |
@@ -70,6 +69,8 @@ State at handoff:
 - 2026-10-03: Confirm/Changed P1 implemented as structured comments ("Can confirm — still true…") so they feed summarize_post / ranking without a new table. Reciprocal query priority left unimplemented.
 
 ## Work log
+- 2026-10-04 session 13: **Re-verified the uncommitted session-12 work and fixed two watch bugs.** Guardrails 69/69 on `proxiprompt-test` (deadline fires with no orchestrator; a watch expires on the database clock; only the service can retire a watch). `pnpm e2e:browser` canonical demo passed. The watch spec failed: the watch was armed with option id `many_open` while the answers were stored as `many_seats` / "Many open seats", so it never said "Seats opened up". `watchReading` now treats a favorable label as a match. Re-ran `pnpm e2e:browser e2e/watch.spec.ts`: passed. A question that is not about open seats or quiet is ended with a reason instead of staying on "Setting up". Published to local `proxiprompt` without deleting data. Tests: core 125, orchestrator 44, agent 145.
+- 2026-10-04 session 12: **Browser e2e of SPEC §14, twice, on `proxiprompt-test`.** `pnpm e2e:browser` starts an orchestrator on :8081 and Vite on :5174 (never the live DB). Four Chromium contexts: asker, two demo-located at Shapiro, one at Michigan Union, then a second asker. Nearby prompts, far does not, High + 2 reports, second ask shows "Reusing fresh evidence". Two fixes the run found: the LLM plan for "quiet study" omitted seats, so the follow-up had nothing to reuse (`merge_detected_dimensions`, and a neighbour presence control now drops a subjective slot before an objective one); the reuse line lived only on the timeline, which unmounts when the answer arrives, so the answer screen now shows it when `cacheHit` is set. Job deadlines are a SpacetimeDB schedule (`job_deadline_reached`, private reducer). With no fresh evidence the database writes insufficient on its own (guardrails 67, no orchestrator). With evidence it sets `deadline_passed` and the worker synthesizes. ASI:One chat that is still working after 45s keeps polling and sends the answer as a follow-up (agent tests 145). **Watch a place:** "Notify me when" asks once and keeps a `watch` for up to 3 hours. `watch_expired` is scheduled in the database (guardrails: expires with no orchestrator; only the owner can cancel). The worker notifies when a firsthand report matches, matching survey labels rather than a fixed ordinal, and does not repeat the same value. Browser check `e2e/watch.spec.ts` passed. Guardrails 68.
 - 2026-10-04 session 11: **Agentverse live.** Agent has a permanent `AGENT_SEED` and `AGENT_MAILBOX=1` (both in git-ignored `services/agent/.env`); address `agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs`, mailbox connected via the inspector, publicly searchable on Agentverse (status active, AgentChatProtocol). Verified from ASI:One chat: messages became queries #37/#38. Handle `@proxiprompt` is taken by the team's ASI:One personal AI (unrelated persona); agent handle is `proxipromptagent` but not yet registered. Fixed: ASI:One's leading "@agent1q…" mention was saved into the question text; `bridge.handle_chat_text` now strips leading mentions. Agent tests 143.
 - 2026-10-04 session 10 (security review of the dev wipe): `/dev/wipe` was reachable by anyone with the ngrok URL (Vite proxied it), from the LAN (server binds 0.0.0.0), and by any website via a simple cross-site POST (CORS `*`). Now `isLocalDevRequest` requires a loopback socket, no `Forwarded`/`X-Forwarded-*` headers (ngrok adds them; Vite's proxy does not since `xfwd` is off), the `X-ProxiPrompt-Dev: 1` header (not allowed by the CORS preflight), and a localhost or absent Origin. The button only renders on localhost. Verified live: ngrok-like, headerless, foreign-origin and LAN requests all get 403. Orchestrator tests 39.
 - 2026-10-04 session 9: **"Wipe activity (dev)" button** on the You tab (Vite dev builds only, two taps). Path: web `POST /dev/wipe` -> Vite proxy -> orchestrator (only when `ENABLE_DEV_WIPE=1`, set by `scripts/dev.sh`) -> service-only reducer `worker_dev_wipe`, which empties queries, events, jobs, batches, recipients, responses, observations, posts, comments, impact, reports and rate buckets. Keeps profiles, devices, locations, places and the service role; also resets the orchestrator's in-memory loop caches. Also: VAPID keys generated into git-ignored `services/orchestrator/.env` + `apps/web/.env` (push now enabled). Tests: guardrails 65, orchestrator 34.
@@ -138,6 +139,20 @@ State at handoff:
   9. **`collecting -> collecting` failed whole queries** (found by the same run) — `promptWave` re-reads `attached` before its own status write is visible through the subscription, sees `planning`, and nudges the status again; the reducer rejects that transition and the outer catch marked the query `failed`. Now re-reads the live row and tolerates losing the race. The fake can model subscription lag via `deferStatusWrites` / `flush()`.
   10. **No tests on the state machine** — fixed. `services/orchestrator/test/fake-conn.ts` mirrors the worker reducers' observable behaviour and their guardrails (autoinc ids, `client_key`/`dedup_key`/`resp_key` idempotency, recipient cap, requester exclusion, location freshness, transition validation); `loop.test.ts` carries one regression test per bug above plus two meta-tests that keep the fake honest (constants compared against `lib.ts` source, every table/reducer `loop.ts` touches must exist). Added `resetLoopState()` (the 9 module-level caches leaked between runs).
 - 2026-10-03 implementer: scaffolded monorepo; `@proxiprompt/core` (92 tests); SpacetimeDB module + bindings + smoke + 61 guardrails; Python uAgent (78 tests) REST + Chat Protocol; orchestrator worker (plan/score/route/push/ASI HTTP/Bluesky); installable PWA (composer, Pulse, query timeline, responder sheet, activity, profile, demo GPS, diagnostics); e2e slice passed.
+
+## Verification (2026-10-04 ~02:45 local)
+
+```
+pnpm --filter @proxiprompt/core test          # 125 passed
+pnpm --filter @proxiprompt/orchestrator test  # 44 passed
+cd services/agent && uv run pytest -q         # 145 passed
+pnpm --filter @proxiprompt/spacetimedb guardrails
+  69 checks passed, 0 failed
+pnpm e2e:browser
+  canonical demo passed (42.7s)
+pnpm e2e:browser e2e/watch.spec.ts
+  failed first (option id many_open vs stored many_seats), passed after the label match (24.6s)
+```
 
 ## Verification (last observed 2026-10-03, after the correctness pass)
 
@@ -212,14 +227,12 @@ ENABLE_BLUESKY=0 DEMO_MODE=1 pnpm exec tsx services/orchestrator/scripts/e2e.ts
 - Reciprocal priority P1 experiment not built.
 
 ## Next actions (for the next human/agent)
-Full specs (isolation rules, test plans, file/line pointers, estimates) for each item are in `NEXT_STEPS.md`. This list is the summary.
+Full specs are in `NEXT_STEPS.md`.
 
-1. **Playwright browser e2e of SPEC §14** (~1.5 h; last unmet acceptance criterion). Run against `proxiprompt-test`, never the live DB: a second Vite with `VITE_SPACETIMEDB_DB=proxiprompt-test` and a second orchestrator (`ORCH_PORT=8081`, `SPACETIMEDB_DB=proxiprompt-test`, worker token in `spacetimedb/.local/worker-token-proxiprompt-test`); make the Vite proxy target configurable. 4 contexts: asker; 2 responders with demo location Shapiro; 1 at Michigan Union. Assert: 2 nearby prompted, far not; answers land; answer shows confidence; second asker gets "Reusing fresh evidence" and no new prompts. Playwright browsers are cached in `~/Library/Caches/ms-playwright`; the npm package is not installed yet.
-2. **Fix what step 1 finds.**
-3. **SpacetimeDB track upgrades** (see "Sponsor tracks" below), highest value first: scheduled reducers for deadlines/expiry, SpacetimeAuth, MainCloud publish.
-4. **"Watch a place" extension** (proposed, awaiting Paul's yes): standing question ("tell me when seats open at Shapiro") that re-evaluates on new observations and pushes on change.
-5. **Fetch.ai deliverables:** handle, public ASI:One chat link with an answered workflow, demo video, Devpost.
-6. Later (Paul deferred): iPhone push test; rehearse the §14 script with the team; deploy.
+1. **SpacetimeAuth** needs a project and client ID in `VITE_SPACETIMEAUTH_CLIENT_ID`. The OIDC path in `apps/web/src/auth.tsx` is already implemented and falls back to labeled dev auth until that ID exists.
+2. **MainCloud** needs `spacetime login` (browser sign-in), then `spacetime publish --server maincloud proxiprompt` from `spacetimedb/`. The orchestrator and agent can stay on the laptop.
+3. **Fetch.ai deliverables that need Paul:** register handle `proxipromptagent`, a public ASI:One chat link of a finished answer, demo video, Devpost. The late-answer follow-up chat message is implemented.
+4. Later (Paul deferred): iPhone push; rehearse §14 with the team; hosted deploy (add a bridge token before `ORCH_HOST=0.0.0.0`).
 
 ## Sponsor tracks (assessment 2026-10-04)
 ### Fetch.ai ASI:One Agent Challenge: requirements met, deliverables outstanding
@@ -231,9 +244,9 @@ Already strong (say this in the pitch):
 - All safety rules live in reducers, not the app: query/job state machine, one response per recipient, recipient cap (20), requester exclusion, location freshness, cooldowns, rate limits (incl. 60/h service relay), blocklist, admin hide, service-role authorization, dev wipe.
 - Privacy by views: exact coordinates and responses are private tables; the public reads only views (`svc_*` for the worker, `my_*` per user, public Pulse/place views). Guardrails check that other users and the public cannot read private rows.
 - Real-time everywhere: the PWA timeline, prompt pop-up and Pulse are live subscriptions; the orchestrator is itself a subscriber reacting to row changes.
-- 65 automated guardrail checks against a live published module (`pnpm --filter @proxiprompt/spacetimedb guardrails`).
+- 69 automated guardrail checks against a live published module (`pnpm --filter @proxiprompt/spacetimedb guardrails`).
 Gaps, in order of judge impact:
-1. **No scheduled reducers.** Deadlines, prompt expiry and late-answer windows are enforced by the orchestrator polling every 2 s. Moving job deadlines/expiry to SpacetimeDB schedule tables would show "the database runs the clock" and survive a worker crash. (~2 h, touches `loop.ts` state machine; keep tests green.)
+1. **Job deadlines are scheduled.** `job_deadline_schedule` calls `job_deadline_reached` (private; clients cannot invoke it). No fresh evidence: the database writes insufficient and expires the job with no worker running (guardrails). Fresh evidence: `deadline_passed` and the worker synthesizes. Prompt expiry and rate-bucket cleanup are still worker-side.
 2. **Auth is anonymous "dev auth".** `VITE_SPACETIMEAUTH_CLIENT_ID` unset, so SpacetimeAuth magic-link login is not in use. Needs a SpacetimeAuth project (human) then a short wiring check.
 3. **Runs on local `spacetime start`, not MainCloud.** `spacetime login` + publish to MainCloud (human login) makes it a real hosted demo.
 

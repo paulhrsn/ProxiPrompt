@@ -106,11 +106,12 @@ async def test_llm_plan_is_validated_and_clamped(with_key, monkeypatch, shapiro)
     p = await planner.plan(plan_req(shapiro))
     assert len(calls) == 1
     assert p.planner == "llm"
-    assert [d.key for d in p.dimensions] == ["noise_level", "seating_availability"]  # unknown key dropped
-    assert [d.proposed_ttl_s for d in p.dimensions] == [300, 1800]  # clamped to high bounds
+    # unknown key dropped; "worth" in the question adds worth_it even if the model omitted it
+    assert [d.key for d in p.dimensions] == ["noise_level", "seating_availability", "worth_it"]
+    assert [d.proposed_ttl_s for d in p.dimensions] == [300, 1800, 5400]
     assert p.responder_radius_m == 500 and p.responder_count == 5
-    assert [c.dimension_key for c in p.survey.controls] == ["noise_level", "seating_availability"]  # missing control repaired
-    assert p.intent_key == "shapiro-undergraduate-library:noise_level+seating_availability"
+    assert [c.dimension_key for c in p.survey.controls] == ["noise_level", "seating_availability", "worth_it"]
+    assert p.intent_key == "shapiro-undergraduate-library:noise_level+seating_availability+worth_it"
 
 
 async def test_llm_survey_question_leaking_requester_is_replaced(with_key, monkeypatch, shapiro):

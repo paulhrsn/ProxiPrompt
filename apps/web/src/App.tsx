@@ -207,24 +207,48 @@ function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> })
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  async function savePlace() {
+    if (!place) return;
+    await conn.reducers.upsertPlace({
+      id: place.id,
+      name: place.name,
+      category: place.category,
+      lat: place.lat,
+      lng: place.lng,
+      address: place.address,
+      community: place.community,
+    });
+  }
+
   async function ask() {
     if (!place || q.trim().length < 3) return;
     setBusy(true);
     setErr("");
     try {
-      await conn.reducers.upsertPlace({
-        id: place.id,
-        name: place.name,
-        category: place.category,
-        lat: place.lat,
-        lng: place.lng,
-        address: place.address,
-        community: place.community,
-      });
+      await savePlace();
       const clientRequestId = crypto.randomUUID();
       await conn.reducers.submitQuery({ clientRequestId, placeId: place.id, text: q.trim() });
       // The reducer resolves before the my_queries view update arrives, so the row is not
       // there yet. Wait for it instead of bouncing the asker to /activity.
+      const id = await waitForQueryId(conn, clientRequestId);
+      go(id ? `/q/${id}` : "/activity");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function notify() {
+    if (!place || q.trim().length < 3) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await savePlace();
+      const clientRequestId = crypto.randomUUID();
+      // Ask once so someone nearby can look, and keep a watch so a later change still pings.
+      await conn.reducers.submitQuery({ clientRequestId, placeId: place.id, text: q.trim() });
+      await conn.reducers.createWatch({ clientRequestId: `watch-${clientRequestId}`, placeId: place.id, text: q.trim(), durationS: 0n });
       const id = await waitForQueryId(conn, clientRequestId);
       go(id ? `/q/${id}` : "/activity");
     } catch (e) {
@@ -247,7 +271,10 @@ function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> })
         <textarea className="input" rows={3} placeholder="What’s it like there right now?" value={q} onChange={(e) => setQ(e.target.value)} />
       </label>
       {err && <p className="err">{err}</p>}
-      <button className="btn" type="submit" disabled={busy || !place || q.trim().length < 3}>{busy ? "Asking…" : "Ask"}</button>
+      <div className="actions">
+        <button className="btn" type="submit" disabled={busy || !place || q.trim().length < 3}>{busy ? "Asking…" : "Ask"}</button>
+        <button className="btn ghost" type="button" disabled={busy || !place || q.trim().length < 3} onClick={() => void notify()}>Notify me when</button>
+      </div>
     </form>
   );
 }
@@ -690,6 +717,7 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
       ) : null}
       {ans && (
         <>
+          {ans.cacheHit ? <p>Reusing fresh evidence — no one interrupted</p> : null}
           {ans.summary && ans.summary !== ans.headline ? <p className="body">{ans.summary}</p> : null}
           <p>
             <span className={`level ${ans.confidence?.level}`}>{ans.confidence?.level ?? "Low"}</span>
@@ -733,6 +761,7 @@ type PromptRow = {
 function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
   const pending = list(conn.db.myPrompts.iter()).filter(isAnswerable);
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const [thanks, setThanks] = useState(false);
   const prompt = pending.find((p) => !hidden.has(String(p.batchId)));
   const id = prompt ? String(prompt.batchId) : "";
 
@@ -748,12 +777,37 @@ function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn
     note.onclick = () => window.focus();
   }, [id, prompt]);
 
-  if (!prompt) return null;
-  return (
-    <div className="ping">
-      <AnswerForm conn={conn} prompt={prompt} onDone={() => setHidden((prev) => new Set(prev).add(id))} />
-    </div>
-  );
+  // A new question replaces the confirmation. Keyed on id so a re-render of the same
+  // prompt does not clear the thanks line in the same turn it was set.
+  useEffect(() => {
+    if (id) setThanks(false);
+  }, [id]);
+  useEffect(() => {
+    if (!thanks) return;
+    const timer = setTimeout(() => setThanks(false), 4000);
+    return () => clearTimeout(timer);
+  }, [thanks]);
+
+  if (prompt) {
+    return (
+      <div className="ping">
+        <AnswerForm
+          conn={conn}
+          prompt={prompt}
+          onDone={() => setHidden((prev) => new Set(prev).add(id))}
+          onSent={() => setThanks(true)}
+        />
+      </div>
+    );
+  }
+  if (thanks) {
+    return (
+      <div className="ping">
+        <p>Thanks — signal sent.</p>
+      </div>
+    );
+  }
+  return null;
 }
 
 function Respond({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>; id: string }) {
@@ -775,10 +829,13 @@ function AnswerForm({
   conn,
   prompt,
   onDone,
+  onSent,
 }: {
   conn: NonNullable<ReturnType<typeof useDb>["conn"]>;
   prompt: PromptRow;
   onDone?: () => void;
+  /** Success path. Leaves the sheet mounted so "signal sent" can actually render. */
+  onSent?: () => void;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
@@ -795,7 +852,10 @@ function AnswerForm({
     try {
       await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(payload), note });
       setDone(true);
-      onDone?.();
+      // onSent keeps the confirmation up. onDone hides the sheet immediately, which
+      // unmounts this message in the same paint, so success uses onSent when given.
+      if (onSent) onSent();
+      else onDone?.();
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -856,8 +916,41 @@ const STATUS_LABEL: Record<string, string> = {
 function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
   const queries = list(conn.db.myQueries.iter()).sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
   const prompts = list(conn.db.myPrompts.iter()).filter(isAnswerable);
+  const watches = list(conn.db.myWatches.iter()).filter((w) => w.status !== "cancelled").sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
   return (
     <section>
+      {watches.length ? (
+        <>
+          <h1>Watching</h1>
+          {watches.map((w) => {
+            const target = (() => {
+              try {
+                return JSON.parse(w.targetJson || "null") as { phrase?: string } | null;
+              } catch {
+                return null;
+              }
+            })();
+            const headline = w.status === "expired"
+              ? "Watch ended"
+              : w.lastValue
+                ? `${target?.phrase ?? "Update"} at ${placeLabel(conn, w.placeId)}`
+                : `Watching ${placeLabel(conn, w.placeId)}`;
+            return (
+              <div className="card" key={String(w.id)}>
+                <div className="meta">
+                  <span>{w.status === "planning" ? "Setting up" : w.status === "expired" ? "Ended" : "Watching"}</span>
+                </div>
+                <p className="body">{headline}</p>
+                <p>{w.text}</p>
+                {w.lastValue ? <p className="body">{w.lastValue}</p> : <p>I'll tell you here when it changes.</p>}
+                {w.status === "active" || w.status === "planning" ? (
+                  <button className="text" type="button" onClick={() => void conn.reducers.cancelWatch({ watchId: w.id }).catch(() => undefined)}>Stop watching</button>
+                ) : null}
+              </div>
+            );
+          })}
+        </>
+      ) : null}
       {prompts.length ? (
         <>
           <h1>Asked of you</h1>
@@ -1076,7 +1169,10 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         return (
           <>
             <div className="status">
-              <p className={gpsError && !demo && !label ? "status-readout bad" : "status-readout"}>{demo ? "Simulated location" : label ?? (gpsError || "Finding your location…")}</p>
+              <p
+                className={gpsError && !demo && !label ? "status-readout bad" : "status-readout"}
+                data-testid={loc?.source === "demo" ? "demo-location" : undefined}
+              >{demo ? "Simulated location" : label ?? (gpsError || "Finding your location…")}</p>
             </div>
             {showChoices ? (
               <div className="confirm">

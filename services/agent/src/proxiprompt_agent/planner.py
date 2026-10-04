@@ -92,6 +92,29 @@ def make_dimension(key: str, question: str | None = None) -> PlanDimension:
     return PlanDimension.model_validate({"key": key, "label": label})
 
 
+def merge_detected_dimensions(dims: list[PlanDimension], text: str) -> list[PlanDimension]:
+    """Add vocabulary dimensions the question names when the model left them out.
+
+    Caching only works when two questions share dimensions (SPEC §7). The model often
+    folds "quiet study" into worth_it and never asks about seats, so a later "quiet seat"
+    question has nothing to reuse. Keyword detection is the backstop. Objective dimensions
+    are kept ahead of subjective ones when the survey cap would otherwise drop a seat check.
+    """
+    detected = [key for key in detect_dimensions(text) if not is_freeform(key)]
+    have = {d.key for d in dims}
+    merged = list(dims)
+    for key in detected:
+        if key in have:
+            continue
+        merged.append(make_dimension(key, text))
+        have.add(key)
+    if len(merged) <= MAX_CONTROLS:
+        return merged
+    objective = [d for d in merged if d.kind == "objective"]
+    subjective = [d for d in merged if d.kind != "objective"]
+    return (objective + subjective)[:MAX_CONTROLS]
+
+
 # ---------------------------------------------------------------------------
 # Safety guard (runs before any LLM call)
 # ---------------------------------------------------------------------------
@@ -366,6 +389,7 @@ def _repair_plan_dict(raw: dict[str, Any], req: PlanRequest) -> PlanResponse:
             break
     if not dims:
         raise ValueError("LLM plan has no usable dimensions")
+    dims = merge_detected_dimensions(dims, req.text)
     keys = [d.key for d in dims]
 
     needs_clar = bool(raw.get("needs_clarification"))

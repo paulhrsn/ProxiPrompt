@@ -12,16 +12,16 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  clientKey: __t.string().name("client_key"),
+  owner: __t.identity(),
   placeId: __t.string().name("place_id"),
-  intentKey: __t.string().name("intent_key"),
+  text: __t.string(),
+  idemKey: __t.string().name("idem_key"),
   dimensionKeysJson: __t.string().name("dimension_keys_json"),
+  targetJson: __t.string().name("target_json"),
   status: __t.string(),
-  planJson: __t.string().name("plan_json"),
+  lastValue: __t.string().name("last_value"),
+  lastNotifiedAt: __t.option(__t.timestamp()).name("last_notified_at"),
   createdAt: __t.timestamp().name("created_at"),
-  deadlineAt: __t.timestamp().name("deadline_at"),
-  recipientsCount: __t.u32().name("recipients_count"),
-  confidenceJson: __t.option(__t.string()).name("confidence_json"),
+  expiresAt: __t.timestamp().name("expires_at"),
   svc: __t.u8(),
-  deadlinePassed: __t.bool().name("deadline_passed"),
 });

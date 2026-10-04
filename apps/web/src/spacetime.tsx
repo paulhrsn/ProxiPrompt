@@ -22,6 +22,7 @@ const VIEWS = [
   "SELECT * FROM my_profile",
   "SELECT * FROM my_location",
   "SELECT * FROM my_queries",
+  "SELECT * FROM my_watches",
   "SELECT * FROM my_query_events",
   "SELECT * FROM my_prompts",
   "SELECT * FROM my_posts",

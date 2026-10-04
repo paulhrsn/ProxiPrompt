@@ -31,6 +31,7 @@ function saveToken(token: string) {
 const SVC_VIEWS = [
   "SELECT * FROM place",
   "SELECT * FROM svc_query",
+  "SELECT * FROM svc_watch",
   "SELECT * FROM svc_query_event",
   "SELECT * FROM svc_evidence_job",
   "SELECT * FROM svc_prompt_batch",
@@ -134,6 +135,8 @@ async function attach(c: DbConnection) {
   console.log("subscribed to svc_* views");
   await seedPlaces(c);
   c.db.svcQuery.onInsert(() => void processOnce());
+  c.db.svcWatch.onInsert(() => void processOnce());
+  c.db.svcObservation.onInsert(() => void processOnce());
   c.db.svcQuery.onUpdate(() => void processOnce());
   c.db.svcPromptResponse.onInsert(() => void processOnce());
   c.db.svcPost.onInsert(() => void processOnce());

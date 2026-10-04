@@ -36,7 +36,7 @@ pnpm --filter @proxiprompt/spacetimedb publish:test && pnpm --filter @proxipromp
 
 ## 1. Playwright browser end-to-end test of the canonical demo
 
-**Status:** not started. **Priority:** first. **Estimate:** ~1.5 h. **Needs Paul:** nothing.
+**Status:** done 2026-10-04. Re-checked this session: the canonical spec passed against `proxiprompt-test`. **Needs Paul:** nothing.
 
 **Why:** SPEC §15 requires "one browser-driven end-to-end scenario", the only unmet acceptance criterion. It is also the fastest way to make "everything works in the browser mock" provable with one command after every change, instead of Paul clicking through it.
 
@@ -69,7 +69,7 @@ pnpm --filter @proxiprompt/spacetimedb publish:test && pnpm --filter @proxipromp
 
 ## 2. Fix whatever item 1 finds
 
-**Status:** blocked on 1. Each failure: write/keep the failing e2e step, find the root cause, add a unit or orchestrator test that pins it, fix, re-run. Log each fix in the PROGRESS work log.
+**Status:** done 2026-10-04. The run found two product bugs, both pinned and fixed: the planner now keeps vocabulary dimensions the question names (seats on "quiet study"), and a neighbour presence control drops a subjective survey slot before an objective one. The cache-hit line stays on the answer screen. See PROGRESS session 12.
 
 ---
 
@@ -79,7 +79,7 @@ Current strengths and the full gap list are in PROGRESS "Sponsor tracks". These 
 
 ### 3a. Scheduled reducers: let the database run the clock
 
-**Status:** not started. **Estimate:** ~2 h. **Needs Paul:** nothing.
+**Status:** done 2026-10-04 for job deadlines. Prompt-expiry and rate-bucket GC schedules are still optional. **Needs Paul:** nothing.
 
 **Problem today:** every time-based rule is enforced by the orchestrator polling every 2 s:
 - Job deadline: `loop.ts:656` computes `pastDeadline = now >= job.deadlineAt`, then (`loop.ts:696-721`) writes an `insufficient` answer when there is no evidence, or synthesizes, then sets the job `expired`.
@@ -122,7 +122,7 @@ If the orchestrator is down, deadlines silently stop happening and queries hang 
 
 ## 4. "Watch a place" extension (proposed, NOT yet approved by Paul)
 
-**Status:** awaiting Paul's yes. Do not start without it.
+**Status:** done 2026-10-04. "Notify me when" asks once and keeps a watch for up to 3 hours. The database expires it. A later report that matches (open seats, or quiet) shows on Questions and sends a push. The match uses the report's label as well as its option id, because the watch and the question are planned separately and the model picks different ids for the same choice. A question that is not seats or quiet ends with a reason instead of staying on "Setting up". Verified in Chromium against `proxiprompt-test` (`e2e/watch.spec.ts`, passed after that fix).
 
 **Idea:** a standing question. "Tell me when seats open up at Shapiro." The agent keeps watching new evidence and pushes when the answer changes, instead of answering once. Fits the "Actually Intelligent" track: the agent acts on the user's behalf over time.
 
@@ -141,7 +141,7 @@ Remaining (mostly Paul):
 2. Produce a public ASI:One shared chat URL showing a fully answered workflow: have a teammate's tab demo-located at the place, ask from ASI:One, answer in the tab within the 30 s demo window.
 3. Demo video, Devpost entry with the Agentverse profile URL: https://agentverse.ai/agents/details/agent1q2n246t50502rk048qful37rqmf3sv9yna6z9gsdlynr3lqrcmzhj7p3ncs/profile
 
-Known gap: the ASI:One chat reply waits ~45 s then sends a "still working" message; an answer that lands later is not pushed back to the chat. Consider a follow-up chat message when the query finishes (`bridge.py` polling loop).
+Follow-up: if the answer is not ready after 45s, the chat says it will send the answer, then `poll_until_done` keeps watching for 3 minutes and posts the result (`bridge.py`, `agent.py`). Verified with `tests/test_chat_bridge.py`.
 
 ---
 

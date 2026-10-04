@@ -9,3 +9,4 @@ export * from "./freshness";
 export * from "./ranking";
 export * from "./places";
 export * from "./placePart";
+export * from "./watch";

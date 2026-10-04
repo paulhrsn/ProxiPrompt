@@ -436,6 +436,38 @@ describe("adjacent buildings (the Duderstadt/Pierpont report)", () => {
     expect(asked).toContain(hexFor("jerry"));
   });
 
+  it("keeps seats and noise when Shapiro's neighbour takes a survey slot", async () => {
+    const conn = makeFakeConn(NOW);
+    const shapiro = CATALOG_PLACES.find((p) => p.id === "shapiro-undergraduate-library")!;
+    addPlace(conn, { id: shapiro.id, name: shapiro.name, category: shapiro.category, lat: shapiro.lat, lng: shapiro.lng, address: shapiro.address });
+    const asked = plan(
+      ["noise_level", "worth_it", "seating_availability"],
+      "How quiet is Shapiro Undergraduate Library for studying right now?",
+    );
+    asked.dimensions = [
+      dim("noise_level", "objective"),
+      dim("worth_it", "subjective", 5400),
+      dim("seating_availability", "objective"),
+    ];
+    vi.mocked(callPlan).mockResolvedValue(asked as never);
+    const asker = addUser(conn, "asker", { lat: 42.30, lng: -83.80 });
+    addUser(conn, "near", { lat: shapiro.lat, lng: shapiro.lng, source: "demo", claimedPlaceId: shapiro.id });
+    addQuery(conn, asker, shapiro.id, "Is Shapiro worth going to if I need somewhere quiet to study?");
+
+    await tick(asConn(conn));
+
+    const controls = JSON.parse(conn.rows.svcPromptBatch[0]!.controlsJson) as { dimension_key: string }[];
+    const keys = controls.map((c) => c.dimension_key);
+    expect(keys).toContain("other:place_part");
+    expect(keys).toContain("noise_level");
+    expect(keys).toContain("seating_availability");
+    expect(keys).not.toContain("worth_it");
+    expect(keys.length).toBeLessThanOrEqual(3);
+    const jobKeys = JSON.parse(conn.rows.svcEvidenceJob[0]!.dimensionKeysJson) as string[];
+    expect(jobKeys).toEqual(expect.arrayContaining(["noise_level", "seating_availability"]));
+    expect(jobKeys).not.toContain("worth_it");
+  });
+
   it("does not add a presence control for a place with no close neighbour", async () => {
     const conn = makeFakeConn(NOW);
     const stadium = CATALOG_PLACES.find((p) => p.id === "michigan-stadium")!;
@@ -555,6 +587,73 @@ describe("bug 7: verified-nearby on a post", () => {
     await tick(asConn(conn));
 
     expect(conn.rows.svcObservation.filter((o) => o.sourceType === "post")[0]!.verifiedNearby).toBe(false);
+  });
+});
+
+describe("the database owns the deadline clock", () => {
+  it("closes a collecting job when the database flags the deadline, before the clock", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    const asker = addUser(conn, "asker", { lat: 42.30, lng: -83.70 });
+    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
+    const q = addQuery(conn, asker, place.id, "How loud is it?");
+    await tick(asConn(conn));
+    const job = conn.rows.svcEvidenceJob[0]!;
+    expect(Number(job.deadlineAt.microsSinceUnixEpoch / 1000n)).toBeGreaterThan(NOW);
+    expect(conn.rows.svcQuery.find((r) => r.id === q.id)!.status).toBe("collecting");
+    await tick(asConn(conn));
+    expect(conn.rows.svcQuery.find((r) => r.id === q.id)!.status).toBe("collecting");
+    job.deadlinePassed = true;
+    await tick(asConn(conn));
+    expect(conn.rows.svcQuery.find((r) => r.id === q.id)!.status).toBe("insufficient");
+  });
+});
+
+describe("a watch fires when the place changes", () => {
+  it("notes the open seats once, then stays quiet while they stay open", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    conn.rows.svcWatch.push({
+      id: 1n,
+      owner: identityFor("watcher"),
+      placeId: place.id,
+      text: "Tell me when seats open up",
+      status: "active",
+      dimensionKeysJson: '["seating_availability"]',
+      targetJson: JSON.stringify({ dimension: "seating_availability", phrase: "Seats opened up", metValues: ["mid"] }),
+      lastValue: "",
+      expiresAt: ts(NOW + 60_000),
+      svc: 0,
+    });
+    addObservation(conn, { dimension: "seating_availability", ordinal: 3, placeId: place.id, contributor: identityFor("u1") });
+    await tick(asConn(conn));
+    await tick(asConn(conn));
+    const notes = conn.calls.filter((c) => c.name === "workerNoteWatch");
+    expect(notes).toHaveLength(1);
+    expect(conn.rows.svcWatch[0]!.lastValue).toBe("Moderate");
+  });
+
+  it("ends a watch it cannot turn into open seats or quiet", async () => {
+    const conn = makeFakeConn(NOW);
+    const place = addPlace(conn);
+    conn.rows.svcWatch.push({
+      id: 2n,
+      owner: identityFor("watcher"),
+      placeId: place.id,
+      text: "Tell me when the vending machine is restocked",
+      status: "planning",
+      dimensionKeysJson: "[]",
+      targetJson: "",
+      lastValue: "",
+      expiresAt: ts(NOW + 60_000),
+      svc: 0,
+    });
+    vi.mocked(callPlan).mockResolvedValue(plan(["other:ask_vending"]) as never);
+
+    await tick(asConn(conn));
+
+    expect(conn.rows.svcWatch[0]!.status).toBe("expired");
+    expect(conn.rows.svcWatch[0]!.lastValue.toLowerCase()).toContain("open seats");
   });
 });
 

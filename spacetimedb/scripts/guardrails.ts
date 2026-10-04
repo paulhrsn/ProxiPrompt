@@ -65,6 +65,7 @@ const VIEWS = [
   'my_devices',
   'my_location',
   'my_queries',
+  'my_watches',
   'my_query_events',
   'my_prompts',
   'my_impact',
@@ -246,6 +247,9 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
     ['workerSetPostSummary', { postId: 1n, summary: 's', claimsJson: '[]', freshnessState: 'fresh', freshnessNote: '' }],
     ['workerRecordImpact', { contributor: D.identity, sourceType: 'response', sourceId: 'x', queryId: q1, kind: 'helped' }],
     ['workerSetAdmin', { identity: D.identity, isAdmin: true }],
+    ['workerArmWatch', { watchId: 1n, dimensionKeysJson: '["noise_level"]', targetJson: '{}' }],
+    ['workerNoteWatch', { watchId: 1n, lastValue: 'Quiet' }],
+    ['workerRetireWatch', { watchId: 1n, reason: 'not watchable' }],
   ];
   for (const [name, args] of calls) {
     const m = await rejects(R(D)[name](args), /Only the service/);
@@ -258,7 +262,7 @@ await check('worker-only reducers reject a non-service identity (all of them)', 
 await subscribe(W, [
   'svc_user_profile', 'svc_device', 'svc_user_location', 'svc_query', 'svc_query_event', 'svc_evidence_job',
   'svc_prompt_batch', 'svc_prompt_recipient', 'svc_prompt_response', 'svc_observation', 'svc_post', 'svc_comment',
-  'svc_impact_event', 'svc_report',
+  'svc_impact_event', 'svc_report', 'svc_watch',
 ].map((v) => `SELECT * FROM ${v}`));
 await check('worker read: svc_* views return ALL private rows to the service identity', async () => {
   const locs = rows(W, 'svcUserLocation').length;
@@ -572,13 +576,78 @@ await check('comment rate limit: 30/h, 31st rejected', async () => {
 });
 
 // ============================================================================================
+console.log('\nWatches');
+await check('a watch expires on the database clock, and only its owner can cancel it', async () => {
+  const crid = `w-${run}`;
+  await R(A).createWatch({ clientRequestId: crid, placeId: slug, text: 'Tell me when seats open up', durationS: 2n });
+  const w = await eventually(() => rows(A, 'myWatches').find((x) => x.idemKey.endsWith(crid)), 3000, 'watch');
+  await rejects(R(B).cancelWatch({ watchId: w.id }), /Watch not found/);
+  await eventually(() => rows(A, 'myWatches').find((x) => x.id === w.id && x.status === 'expired'), 12_000, 'watch expired');
+  return 'expired without an orchestrator';
+});
+await check('only the service can retire a watch', async () => {
+  const crid = `retire-${run}`;
+  await R(A).createWatch({ clientRequestId: crid, placeId: slug, text: 'Tell me when the line dies down', durationS: 0n });
+  const w = await eventually(() => rows(A, 'myWatches').find((x) => x.idemKey.endsWith(crid)), 3000, 'retire watch');
+  await rejects(R(B).workerRetireWatch({ watchId: w.id, reason: 'nope' }), /Only the service/);
+  await R(W).workerRetireWatch({ watchId: w.id, reason: 'I can only watch for open seats or a quiet room.' });
+  const done = await eventually(() => rows(A, 'myWatches').find((x) => x.id === w.id && x.status === 'expired'), 3000, 'retired');
+  if (!String(done.lastValue).toLowerCase().includes('open seats')) throw new Error(done.lastValue);
+  return 'owner sees the reason; someone else cannot end it';
+});
+
+console.log('\nScheduled deadline');
+await check('a client cannot call the scheduled deadline reducer', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const runCall = promisify(execFile);
+  try {
+    await runCall('spacetime', ['call', '--server', 'local', DB, 'job_deadline_reached', '--anonymous', '-y'], { timeout: 20_000 });
+    throw new Error('scheduled reducer was client-callable');
+  } catch (e) {
+    const msg = `${errMessage(e)}\n${(e as { stderr?: string; stdout?: string }).stderr ?? ''}\n${(e as { stdout?: string }).stdout ?? ''}`;
+    if (!/No such procedure|Private|404/i.test(msg)) throw new Error(msg.trim());
+    return 'private reducer, client call rejected';
+  }
+});
+await check('deadline fires with no orchestrator when a job has no evidence', async () => {
+  const crid = `deadline-${run}`;
+  await R(A).submitQuery({ clientRequestId: crid, placeId: slug, text: 'Is it quiet right now?' });
+  const q = await eventually(() => rows(A, 'myQueries').find((x) => x.clientRequestId === crid), 3000, 'deadline query');
+  const clientKey = `deadline-${run}-job`;
+  await R(W).workerCreateJob({
+    clientKey,
+    placeId: slug,
+    intentKey: 'noise',
+    dimensionKeysJson: '["noise_level"]',
+    planJson: '{"planner":"heuristic"}',
+    deadlineAtMicros: nowMicros() + 2_000_000n,
+  });
+  const j = await eventually(() => rows(W, 'svcEvidenceJob').find((x) => x.clientKey === clientKey), 3000, 'deadline job');
+  await R(W).workerAttachQuery({ queryId: q.id, jobId: j.id });
+  await R(W).workerSetQueryStatus({ queryId: q.id, status: 'collecting' });
+  const done = await eventually(
+    () => rows(A, 'myQueries').find((x) => x.id === q.id && x.status === 'insufficient'),
+    12_000,
+    'deadline insufficient',
+  );
+  const events = rows(A, 'myQueryEvents').filter((e) => e.queryId === q.id).map((e) => e.message);
+  if (!events.includes("Time's up")) throw new Error(`events=${events.join(' | ')}`);
+  const answer = JSON.parse(done.answerJson);
+  if (!String(answer.headline).includes('Not enough fresh evidence')) throw new Error(answer.headline);
+  const jobRow = rows(W, 'svcEvidenceJob').find((x) => x.id === j.id);
+  if (jobRow?.status !== 'expired') throw new Error(`job status ${jobRow?.status}`);
+  return 'insufficient with no worker polling';
+});
+
+// ============================================================================================
 // Last: it wipes this test database's activity, so every check above must already have run.
 console.log('\nDev wipe');
 await check('non-service identity cannot worker_dev_wipe', () => rejects(R(A).workerDevWipe({}), /Only the service/));
 await check('worker_dev_wipe clears activity, keeps accounts, locations and places', async () => {
   const profilesBefore = rows(W, 'svcUserProfile').length;
   const locsBefore = rows(W, 'svcUserLocation').length;
-  const activity = ['svcQuery', 'svcQueryEvent', 'svcEvidenceJob', 'svcPromptBatch', 'svcPromptRecipient', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcComment', 'svcImpactEvent', 'svcReport'];
+  const activity = ['svcQuery', 'svcQueryEvent', 'svcEvidenceJob', 'svcPromptBatch', 'svcPromptRecipient', 'svcPromptResponse', 'svcObservation', 'svcPost', 'svcComment', 'svcImpactEvent', 'svcReport', 'svcWatch'];
   if (activity.every((t) => rows(W, t).length === 0)) throw new Error('no activity to wipe; checks above should have created some');
   await R(W).workerDevWipe({});
   await eventually(() => activity.every((t) => rows(W, t).length === 0), 5000, 'activity wiped');

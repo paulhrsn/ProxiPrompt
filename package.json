@@ -8,6 +8,10 @@
     "stop": "bash scripts/kill.sh",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "e2e:browser": "bash scripts/e2e-browser.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

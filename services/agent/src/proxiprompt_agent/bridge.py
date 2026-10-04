@@ -32,6 +32,8 @@ logger = logging.getLogger("proxiprompt.bridge")
 
 POLL_TOTAL_S = 45.0
 POLL_INTERVAL_S = 2.0
+# After the first "still working" reply, keep watching until a late answer can land.
+FOLLOW_UP_TOTAL_S = 180.0
 HTTP_TIMEOUT_S = 10.0
 
 _DONE = {"answered", "insufficient", "refused", "failed", "cancelled", "done"}
@@ -84,9 +86,39 @@ def format_result(data: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+async def _poll_once(client: httpx.AsyncClient, base_url: str, qid: str) -> dict[str, Any] | None:
+    try:
+        g = await client.get(f"{base_url}/asi/query/{qid}")
+        g.raise_for_status()
+        data = g.json()
+    except Exception as exc:
+        logger.warning("orchestrator poll failed: %s", exc)
+        return None
+    return data if isinstance(data, dict) else None
+
+
+async def poll_until_done(base_url: str, qid: str, *, total_s: float, interval_s: float = POLL_INTERVAL_S,
+                           client: httpx.AsyncClient | None = None) -> str | None:
+    """Keep asking the orchestrator until the query finishes. None if it never does."""
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT_S)
+    try:
+        deadline = time.monotonic() + total_s
+        while time.monotonic() < deadline:
+            await asyncio.sleep(interval_s)
+            last = await _poll_once(client, base_url, qid)
+            if last and str(last.get("status", "")).lower() in _DONE:
+                return format_result(last)
+        return None
+    finally:
+        if own:
+            await client.aclose()
+
+
 async def run_orchestrated(text: str, sender: str, base_url: str,
                            *, total_s: float = POLL_TOTAL_S, interval_s: float = POLL_INTERVAL_S,
-                           client: httpx.AsyncClient | None = None) -> str:
+                           client: httpx.AsyncClient | None = None) -> tuple[str, str | None]:
+    """Reply text, plus a query id when the answer is not ready yet and a follow-up should be sent."""
     own = client is None
     client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT_S)
     try:
@@ -96,31 +128,28 @@ async def run_orchestrated(text: str, sender: str, base_url: str,
             created = r.json()
         except Exception as exc:
             logger.warning("orchestrator submit failed: %s", exc)
-            return "I couldn't reach the ProxiPrompt network right now. Please try again in a minute."
+            return "I couldn't reach the ProxiPrompt network right now. Please try again in a minute.", None
         qid = created.get("id") or created.get("query_id")
-        if created.get("status", "").lower() in _DONE:
-            return format_result(created)
+        if str(created.get("status", "")).lower() in _DONE:
+            return format_result(created), None
         if not qid:
-            return "The ProxiPrompt network accepted your question but didn't return a tracking id."
+            return "The ProxiPrompt network accepted your question but didn't return a tracking id.", None
 
         deadline = time.monotonic() + total_s
         last: dict[str, Any] = created
         while time.monotonic() < deadline:
             await asyncio.sleep(interval_s)
-            try:
-                g = await client.get(f"{base_url}/asi/query/{qid}")
-                g.raise_for_status()
-                last = g.json()
-            except Exception as exc:
-                logger.warning("orchestrator poll failed: %s", exc)
+            polled = await _poll_once(client, base_url, str(qid))
+            if polled is None:
                 continue
+            last = polled
             if str(last.get("status", "")).lower() in _DONE:
-                return format_result(last)
+                return format_result(last), None
         progress = last.get("progress") or last.get("message") or "asking people near the place"
         return (
             f"Still working on it ({progress}). Real people near the place are being asked, which can take a minute "
-            f"or two. Ask me again shortly and I'll use the evidence collected so far."
-        )
+            f"or two. I'll send the answer here when it is ready."
+        ), str(qid)
     finally:
         if own:
             await client.aclose()
@@ -155,9 +184,10 @@ async def plan_only_reply(text: str) -> str:
 _LEADING_MENTIONS = re.compile(r"^(?:\s*@[\w.-]+)+\s*")
 
 
-async def handle_chat_text(text: str, sender: str) -> str:
+async def handle_chat_text(text: str, sender: str) -> tuple[str, str | None]:
+    """Reply text, and the orchestrator query id when a later answer should be pushed back to the chat."""
     text = _LEADING_MENTIONS.sub("", text or "")
     url = orchestrator_url()
     if url:
         return await run_orchestrated(text, sender, url)
-    return await plan_only_reply(text)
+    return await plan_only_reply(text), None

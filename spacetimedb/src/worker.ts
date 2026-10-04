@@ -1,7 +1,7 @@
 // Worker-only reducers: sender must be in `service_role`. These hold the authoritative guardrails the
 // orchestrator cannot bypass (state machine, recipient caps, location freshness, requester exclusion).
-import { t } from 'spacetimedb/server';
-import spacetimedb from './schema';
+import { ScheduleAt, t } from 'spacetimedb/server';
+import spacetimedb, { job_deadline_schedule, watch_expiry_schedule } from './schema';
 import {
   JOB_TRANSITIONS,
   LOCATION_MAX_AGE_S,
@@ -120,7 +120,7 @@ export const worker_create_job = spacetimedb.reducer(
     const now = ctx.timestamp.microsSinceUnixEpoch;
     if (a.deadline_at_micros <= now) fail('deadline_at must be in the future');
     if (a.deadline_at_micros > now + 86_400n * MICROS_PER_S) fail('deadline_at must be within 24 hours');
-    ctx.db.evidence_job.insert({
+    const job = ctx.db.evidence_job.insert({
       id: 0n,
       client_key,
       place_id: a.place_id,
@@ -130,10 +130,80 @@ export const worker_create_job = spacetimedb.reducer(
       plan_json: a.plan_json,
       created_at: ctx.timestamp,
       deadline_at: ts(a.deadline_at_micros),
+      deadline_passed: false,
       recipients_count: 0,
       confidence_json: undefined,
       svc: 0,
     });
+    ctx.db.job_deadline_schedule.insert({
+      scheduled_id: 0n,
+      scheduled_at: ScheduleAt.time(a.deadline_at_micros),
+      job_id: job.id,
+    });
+  }
+);
+
+export const job_deadline_reached = spacetimedb.reducer(
+  { onSchedule: job_deadline_schedule },
+  { schedule: job_deadline_schedule.rowType },
+  (ctx, { schedule }) => {
+    // Scheduled reducers run as the module identity. A client can still call this reducer.
+    if (!ctx.sender.isEqual(ctx.identity)) fail('Only the scheduler can run a job deadline');
+    const job = ctx.db.evidence_job.id.find(schedule.job_id);
+    if (!job || (job.status !== 'collecting' && job.status !== 'synthesizing')) return;
+    let dims: string[] = [];
+    try {
+      const parsed = JSON.parse(job.dimension_keys_json);
+      if (Array.isArray(parsed)) dims = parsed.filter((d) => typeof d === 'string');
+    } catch {
+      dims = [];
+    }
+    const now = ctx.timestamp.microsSinceUnixEpoch;
+    const wanted = new Set(dims);
+    let fresh = false;
+    for (const o of ctx.db.observation.place_id.filter(job.place_id)) {
+      if (o.invalidated || o.expires_at.microsSinceUnixEpoch <= now) continue;
+      if (wanted.has(o.dimension)) {
+        fresh = true;
+        break;
+      }
+    }
+    for (const q of queriesForJob(ctx, job)) {
+      if (!['planning', 'collecting', 'synthesizing'].includes(q.status)) continue;
+      addEvent(ctx, q.id, 'deadline', "Time's up");
+      if (fresh) continue;
+      const place = ctx.db.place.id.find(job.place_id);
+      const placeName = place?.name ?? 'this place';
+      let planner = 'heuristic';
+      try {
+        const parsed = JSON.parse(job.plan_json) as { planner?: string };
+        if (parsed.planner === 'llm' || parsed.planner === 'heuristic') planner = parsed.planner;
+      } catch {
+        /* the answer still has to close */
+      }
+      transitionQuery(ctx, q, 'insufficient');
+      ctx.db.query.id.update({
+        ...q,
+        status: 'insufficient',
+        answer_json: JSON.stringify({
+          headline: `Not enough fresh evidence about ${placeName}.`,
+          recommendation: 'insufficient',
+          summary: 'Nobody nearby answered in time, and cached reports were too old or missing.',
+          supporting: [],
+          caveats: ['Try again shortly — a later answer will use any late responses.'],
+          planner,
+          confidence: { score: 0, level: 'Low', ceiling: 0 },
+        }),
+        updated_at: ctx.timestamp,
+      });
+    }
+    if (fresh) {
+      ctx.db.evidence_job.id.update({ ...job, deadline_passed: true });
+      return;
+    }
+    if ((JOB_TRANSITIONS[job.status] ?? []).includes('expired')) {
+      ctx.db.evidence_job.id.update({ ...job, status: 'expired', deadline_passed: true });
+    }
   }
 );
 
@@ -414,6 +484,63 @@ export const worker_set_admin = spacetimedb.reducer(
   }
 );
 
+export const watch_expired = spacetimedb.reducer(
+  { onSchedule: watch_expiry_schedule },
+  { schedule: watch_expiry_schedule.rowType },
+  (ctx, { schedule }) => {
+    if (!ctx.sender.isEqual(ctx.identity)) fail('Only the scheduler can expire a watch');
+    const w = ctx.db.watch.id.find(schedule.watch_id);
+    if (!w || w.status === 'expired' || w.status === 'cancelled') return;
+    ctx.db.watch.id.update({ ...w, status: 'expired' });
+  }
+);
+
+export const worker_arm_watch = spacetimedb.reducer(
+  { watch_id: t.u64(), dimension_keys_json: t.string(), target_json: t.string() },
+  (ctx, { watch_id, dimension_keys_json, target_json }) => {
+    requireService(ctx);
+    const w = ctx.db.watch.id.find(watch_id);
+    if (!w) fail(`Watch ${watch_id} not found`);
+    if (w.status !== 'planning' && w.status !== 'active') return;
+    parseJson('dimension_keys_json', dimension_keys_json, 2000);
+    parseJson('target_json', target_json, 2000);
+    ctx.db.watch.id.update({
+      ...w,
+      dimension_keys_json,
+      target_json,
+      status: 'active',
+    });
+  }
+);
+
+export const worker_note_watch = spacetimedb.reducer(
+  { watch_id: t.u64(), last_value: t.string() },
+  (ctx, { watch_id, last_value }) => {
+    requireService(ctx);
+    const w = ctx.db.watch.id.find(watch_id);
+    if (!w || w.status !== 'active') return;
+    const value = checkString('last_value', last_value, 0, 200);
+    ctx.db.watch.id.update({
+      ...w,
+      last_value: value,
+      last_notified_at: value ? ctx.timestamp : w.last_notified_at,
+    });
+  }
+);
+
+// A watch whose question is not "open seats" or "quiet" cannot be armed. Leave it ended
+// with a reason, instead of sitting on "Setting up" for the whole three hours.
+export const worker_retire_watch = spacetimedb.reducer(
+  { watch_id: t.u64(), reason: t.string() },
+  (ctx, { watch_id, reason }) => {
+    requireService(ctx);
+    const w = ctx.db.watch.id.find(watch_id);
+    if (!w || w.status === 'expired' || w.status === 'cancelled') return;
+    const note = checkString('reason', reason, 1, 200);
+    ctx.db.watch.id.update({ ...w, status: 'expired', last_value: note });
+  }
+);
+
 // ---------- dev ----------
 // Clears all activity so a dev/demo session can start over. Accounts, devices, locations,
 // places and the service role stay, so nobody has to sign up, enable push or set a location
@@ -423,10 +550,12 @@ export const worker_dev_wipe = spacetimedb.reducer({}, (ctx) => {
   const byId = [
     ctx.db.query_event, ctx.db.prompt_response, ctx.db.prompt_recipient, ctx.db.prompt_batch,
     ctx.db.observation, ctx.db.impact_event, ctx.db.report, ctx.db.comment, ctx.db.post,
-    ctx.db.query, ctx.db.evidence_job,
+    ctx.db.query, ctx.db.evidence_job, ctx.db.watch,
   ] as any[];
   for (const table of byId) {
     for (const id of [...table.iter()].map((r: any) => r.id)) table.id.delete(id);
   }
+  for (const row of [...ctx.db.job_deadline_schedule.iter()]) ctx.db.job_deadline_schedule.scheduled_id.delete(row.scheduled_id);
+  for (const row of [...ctx.db.watch_expiry_schedule.iter()]) ctx.db.watch_expiry_schedule.scheduled_id.delete(row.scheduled_id);
   for (const key of [...ctx.db.rate_bucket.iter()].map((r) => r.key)) ctx.db.rate_bucket.key.delete(key);
 });

@@ -49,6 +49,7 @@ export const EvidenceJob = __t.object("EvidenceJob", {
   recipientsCount: __t.u32(),
   confidenceJson: __t.option(__t.string()),
   svc: __t.u8(),
+  deadlinePassed: __t.bool(),
 });
 export type EvidenceJob = __Infer<typeof EvidenceJob>;
 
@@ -64,6 +65,13 @@ export const ImpactEvent = __t.object("ImpactEvent", {
   svc: __t.u8(),
 });
 export type ImpactEvent = __Infer<typeof ImpactEvent>;
+
+export const JobDeadlineSchedule = __t.object("JobDeadlineSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  jobId: __t.u64(),
+});
+export type JobDeadlineSchedule = __Infer<typeof JobDeadlineSchedule>;
 
 export const MyCommentId = __t.object("MyCommentId", {
   commentId: __t.u64(),
@@ -101,6 +109,9 @@ export type MyQueries = __Infer<typeof MyQueries>;
 
 export const MyQueryEvents = __t.object("MyQueryEvents", {});
 export type MyQueryEvents = __Infer<typeof MyQueryEvents>;
+
+export const MyWatches = __t.object("MyWatches", {});
+export type MyWatches = __Infer<typeof MyWatches>;
 
 export const Observation = __t.object("Observation", {
   id: __t.u64(),
@@ -334,6 +345,9 @@ export type SvcUserLocation = __Infer<typeof SvcUserLocation>;
 export const SvcUserProfile = __t.object("SvcUserProfile", {});
 export type SvcUserProfile = __Infer<typeof SvcUserProfile>;
 
+export const SvcWatch = __t.object("SvcWatch", {});
+export type SvcWatch = __Infer<typeof SvcWatch>;
+
 export const UserLocation = __t.object("UserLocation", {
   identity: __t.identity(),
   lat: __t.f64(),
@@ -357,4 +371,28 @@ export const UserProfile = __t.object("UserProfile", {
   svc: __t.u8(),
 });
 export type UserProfile = __Infer<typeof UserProfile>;
+
+export const Watch = __t.object("Watch", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  placeId: __t.string(),
+  text: __t.string(),
+  idemKey: __t.string(),
+  dimensionKeysJson: __t.string(),
+  targetJson: __t.string(),
+  status: __t.string(),
+  lastValue: __t.string(),
+  lastNotifiedAt: __t.option(__t.timestamp()),
+  createdAt: __t.timestamp(),
+  expiresAt: __t.timestamp(),
+  svc: __t.u8(),
+});
+export type Watch = __Infer<typeof Watch>;
+
+export const WatchExpirySchedule = __t.object("WatchExpirySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  watchId: __t.u64(),
+});
+export type WatchExpirySchedule = __Infer<typeof WatchExpirySchedule>;
 

@@ -38,9 +38,11 @@ import AddServiceIdentityReducer from "./add_service_identity_reducer";
 import AdminHideReducer from "./admin_hide_reducer";
 import AnswerClarificationReducer from "./answer_clarification_reducer";
 import CancelQueryReducer from "./cancel_query_reducer";
+import CancelWatchReducer from "./cancel_watch_reducer";
 import ClaimServiceRoleReducer from "./claim_service_role_reducer";
 import CreateCommentReducer from "./create_comment_reducer";
 import CreatePostReducer from "./create_post_reducer";
+import CreateWatchReducer from "./create_watch_reducer";
 import DeactivateDeviceReducer from "./deactivate_device_reducer";
 import DeleteCommentReducer from "./delete_comment_reducer";
 import DeletePostReducer from "./delete_post_reducer";
@@ -54,13 +56,16 @@ import UpdateLocationReducer from "./update_location_reducer";
 import UpsertPlaceReducer from "./upsert_place_reducer";
 import WorkerAddObservationReducer from "./worker_add_observation_reducer";
 import WorkerAddQueryEventReducer from "./worker_add_query_event_reducer";
+import WorkerArmWatchReducer from "./worker_arm_watch_reducer";
 import WorkerAttachQueryReducer from "./worker_attach_query_reducer";
 import WorkerCreateJobReducer from "./worker_create_job_reducer";
 import WorkerCreatePromptBatchReducer from "./worker_create_prompt_batch_reducer";
 import WorkerDevWipeReducer from "./worker_dev_wipe_reducer";
 import WorkerInvalidateObservationReducer from "./worker_invalidate_observation_reducer";
 import WorkerMarkNotifiedReducer from "./worker_mark_notified_reducer";
+import WorkerNoteWatchReducer from "./worker_note_watch_reducer";
 import WorkerRecordImpactReducer from "./worker_record_impact_reducer";
+import WorkerRetireWatchReducer from "./worker_retire_watch_reducer";
 import WorkerSetAdminReducer from "./worker_set_admin_reducer";
 import WorkerSetAnswerReducer from "./worker_set_answer_reducer";
 import WorkerSetClarificationReducer from "./worker_set_clarification_reducer";
@@ -81,6 +86,7 @@ import MyProfileRow from "./my_profile_table";
 import MyPromptsRow from "./my_prompts_table";
 import MyQueriesRow from "./my_queries_table";
 import MyQueryEventsRow from "./my_query_events_table";
+import MyWatchesRow from "./my_watches_table";
 import PlaceRow from "./place_table";
 import PulseCommentsRow from "./pulse_comments_table";
 import PulsePostsRow from "./pulse_posts_table";
@@ -98,6 +104,7 @@ import SvcQueryEventRow from "./svc_query_event_table";
 import SvcReportRow from "./svc_report_table";
 import SvcUserLocationRow from "./svc_user_location_table";
 import SvcUserProfileRow from "./svc_user_profile_table";
+import SvcWatchRow from "./svc_watch_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -180,6 +187,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyQueryEventsRow),
+  myWatches: __table({
+    name: 'my_watches',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyWatchesRow),
   pulseComments: __table({
     name: 'pulse_comments',
     indexes: [
@@ -292,6 +306,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, SvcUserProfileRow),
+  svcWatch: __table({
+    name: 'svc_watch',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, SvcWatchRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -300,9 +321,11 @@ const reducersSchema = __reducers(
   __reducerSchema("admin_hide", AdminHideReducer),
   __reducerSchema("answer_clarification", AnswerClarificationReducer),
   __reducerSchema("cancel_query", CancelQueryReducer),
+  __reducerSchema("cancel_watch", CancelWatchReducer),
   __reducerSchema("claim_service_role", ClaimServiceRoleReducer),
   __reducerSchema("create_comment", CreateCommentReducer),
   __reducerSchema("create_post", CreatePostReducer),
+  __reducerSchema("create_watch", CreateWatchReducer),
   __reducerSchema("deactivate_device", DeactivateDeviceReducer),
   __reducerSchema("delete_comment", DeleteCommentReducer),
   __reducerSchema("delete_post", DeletePostReducer),
@@ -316,13 +339,16 @@ const reducersSchema = __reducers(
   __reducerSchema("upsert_place", UpsertPlaceReducer),
   __reducerSchema("worker_add_observation", WorkerAddObservationReducer),
   __reducerSchema("worker_add_query_event", WorkerAddQueryEventReducer),
+  __reducerSchema("worker_arm_watch", WorkerArmWatchReducer),
   __reducerSchema("worker_attach_query", WorkerAttachQueryReducer),
   __reducerSchema("worker_create_job", WorkerCreateJobReducer),
   __reducerSchema("worker_create_prompt_batch", WorkerCreatePromptBatchReducer),
   __reducerSchema("worker_dev_wipe", WorkerDevWipeReducer),
   __reducerSchema("worker_invalidate_observation", WorkerInvalidateObservationReducer),
   __reducerSchema("worker_mark_notified", WorkerMarkNotifiedReducer),
+  __reducerSchema("worker_note_watch", WorkerNoteWatchReducer),
   __reducerSchema("worker_record_impact", WorkerRecordImpactReducer),
+  __reducerSchema("worker_retire_watch", WorkerRetireWatchReducer),
   __reducerSchema("worker_set_admin", WorkerSetAdminReducer),
   __reducerSchema("worker_set_answer", WorkerSetAnswerReducer),
   __reducerSchema("worker_set_clarification", WorkerSetClarificationReducer),
@@ -356,6 +382,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "my_queries": Omit<typeof tablesSchema.schemaType.tables["myQueries"], "accessorName"> & { readonly accessorName: "my_queries" };
     /** @deprecated Use `myQueryEvents` instead. This alias will be removed in the next major version. */
     readonly "my_query_events": Omit<typeof tablesSchema.schemaType.tables["myQueryEvents"], "accessorName"> & { readonly accessorName: "my_query_events" };
+    /** @deprecated Use `myWatches` instead. This alias will be removed in the next major version. */
+    readonly "my_watches": Omit<typeof tablesSchema.schemaType.tables["myWatches"], "accessorName"> & { readonly accessorName: "my_watches" };
     /** @deprecated Use `pulseComments` instead. This alias will be removed in the next major version. */
     readonly "pulse_comments": Omit<typeof tablesSchema.schemaType.tables["pulseComments"], "accessorName"> & { readonly accessorName: "pulse_comments" };
     /** @deprecated Use `pulsePosts` instead. This alias will be removed in the next major version. */
@@ -388,6 +416,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "svc_user_location": Omit<typeof tablesSchema.schemaType.tables["svcUserLocation"], "accessorName"> & { readonly accessorName: "svc_user_location" };
     /** @deprecated Use `svcUserProfile` instead. This alias will be removed in the next major version. */
     readonly "svc_user_profile": Omit<typeof tablesSchema.schemaType.tables["svcUserProfile"], "accessorName"> & { readonly accessorName: "svc_user_profile" };
+    /** @deprecated Use `svcWatch` instead. This alias will be removed in the next major version. */
+    readonly "svc_watch": Omit<typeof tablesSchema.schemaType.tables["svcWatch"], "accessorName"> & { readonly accessorName: "svc_watch" };
   };
 };
 
@@ -415,6 +445,7 @@ const tableAccessorAliases = {
   "my_prompts": "myPrompts",
   "my_queries": "myQueries",
   "my_query_events": "myQueryEvents",
+  "my_watches": "myWatches",
   "pulse_comments": "pulseComments",
   "pulse_posts": "pulsePosts",
   "svc_comment": "svcComment",
@@ -431,6 +462,7 @@ const tableAccessorAliases = {
   "svc_report": "svcReport",
   "svc_user_location": "svcUserLocation",
   "svc_user_profile": "svcUserProfile",
+  "svc_watch": "svcWatch",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -469,6 +501,8 @@ export type DbView = __DbViewBase & {
   readonly "my_queries": __DbViewBase["myQueries"];
   /** @deprecated Use `myQueryEvents` instead. This alias will be removed in the next major version. */
   readonly "my_query_events": __DbViewBase["myQueryEvents"];
+  /** @deprecated Use `myWatches` instead. This alias will be removed in the next major version. */
+  readonly "my_watches": __DbViewBase["myWatches"];
   /** @deprecated Use `pulseComments` instead. This alias will be removed in the next major version. */
   readonly "pulse_comments": __DbViewBase["pulseComments"];
   /** @deprecated Use `pulsePosts` instead. This alias will be removed in the next major version. */
@@ -501,6 +535,8 @@ export type DbView = __DbViewBase & {
   readonly "svc_user_location": __DbViewBase["svcUserLocation"];
   /** @deprecated Use `svcUserProfile` instead. This alias will be removed in the next major version. */
   readonly "svc_user_profile": __DbViewBase["svcUserProfile"];
+  /** @deprecated Use `svcWatch` instead. This alias will be removed in the next major version. */
+  readonly "svc_watch": __DbViewBase["svcWatch"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -523,6 +559,8 @@ export type Tables = __TablesBase & {
   readonly "my_queries": __TablesBase["myQueries"];
   /** @deprecated Use `myQueryEvents` instead. This alias will be removed in the next major version. */
   readonly "my_query_events": __TablesBase["myQueryEvents"];
+  /** @deprecated Use `myWatches` instead. This alias will be removed in the next major version. */
+  readonly "my_watches": __TablesBase["myWatches"];
   /** @deprecated Use `pulseComments` instead. This alias will be removed in the next major version. */
   readonly "pulse_comments": __TablesBase["pulseComments"];
   /** @deprecated Use `pulsePosts` instead. This alias will be removed in the next major version. */
@@ -555,6 +593,8 @@ export type Tables = __TablesBase & {
   readonly "svc_user_location": __TablesBase["svcUserLocation"];
   /** @deprecated Use `svcUserProfile` instead. This alias will be removed in the next major version. */
   readonly "svc_user_profile": __TablesBase["svcUserProfile"];
+  /** @deprecated Use `svcWatch` instead. This alias will be removed in the next major version. */
+  readonly "svc_watch": __TablesBase["svcWatch"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

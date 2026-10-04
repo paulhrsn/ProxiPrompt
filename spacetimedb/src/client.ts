@@ -1,10 +1,11 @@
 // Client-callable reducers. Every one validates input and throws SenderError with a clear message.
-import { t } from 'spacetimedb/server';
+import { ScheduleAt, t } from 'spacetimedb/server';
 import spacetimedb from './schema';
 import {
   COMMENT_RATE_LIMIT_PER_HOUR,
   PLACE_RATE_LIMIT_PER_HOUR,
   POST_RATE_LIMIT_PER_HOUR,
+  MICROS_PER_S,
   QUERY_RATE_LIMIT_PER_HOUR,
   SERVICE_QUERY_RATE_LIMIT_PER_HOUR,
   REPORT_RATE_LIMIT_PER_HOUR,
@@ -23,6 +24,7 @@ import {
   requirePlace,
   requireProfile,
   requireService,
+  ts,
   transitionQuery,
 } from './lib';
 
@@ -421,6 +423,61 @@ export const admin_hide = spacetimedb.reducer(
     }
   }
 );
+
+const WATCH_MAX_S = 3 * 60 * 60;
+const WATCH_MIN_S = 2;
+
+// ---------- standing watches ----------
+export const create_watch = spacetimedb.reducer(
+  { client_request_id: t.string(), place_id: t.string(), text: t.string(), duration_s: t.u64() },
+  (ctx, { client_request_id, place_id, text, duration_s }) => {
+    requireProfile(ctx);
+    const crid = checkString('client_request_id', client_request_id, 1, 64);
+    const body = checkString('text', text, 3, 300);
+    const idem_key = `${ctx.sender.toHexString()}:${crid}`;
+    if (ctx.db.watch.idem_key.find(idem_key)) return;
+    requirePlace(ctx, place_id);
+    checkBlocklist('text', body);
+    const seconds = duration_s === 0n ? BigInt(WATCH_MAX_S) : duration_s;
+    if (seconds < BigInt(WATCH_MIN_S) || seconds > BigInt(WATCH_MAX_S)) {
+      fail(`duration_s must be between ${WATCH_MIN_S} and ${WATCH_MAX_S}, or 0 for the 3 hour maximum`);
+    }
+    let active = 0;
+    for (const w of ctx.db.watch.owner.filter(ctx.sender)) {
+      if (w.status === 'planning' || w.status === 'active') active += 1;
+    }
+    if (active >= 5) fail('You already have 5 watches running');
+    consumeRate(ctx, 'watches', QUERY_RATE_LIMIT_PER_HOUR);
+    const expires = ctx.timestamp.microsSinceUnixEpoch + seconds * MICROS_PER_S;
+    const row = ctx.db.watch.insert({
+      id: 0n,
+      owner: ctx.sender,
+      place_id,
+      text: body,
+      idem_key,
+      dimension_keys_json: '[]',
+      target_json: '',
+      status: 'planning',
+      last_value: '',
+      last_notified_at: undefined,
+      created_at: ctx.timestamp,
+      expires_at: ts(expires),
+      svc: 0,
+    });
+    ctx.db.watch_expiry_schedule.insert({
+      scheduled_id: 0n,
+      scheduled_at: ScheduleAt.time(expires),
+      watch_id: row.id,
+    });
+  }
+);
+
+export const cancel_watch = spacetimedb.reducer({ watch_id: t.u64() }, (ctx, { watch_id }) => {
+  const w = ctx.db.watch.id.find(watch_id);
+  if (!w || !w.owner.isEqual(ctx.sender)) fail('Watch not found');
+  if (w.status === 'cancelled' || w.status === 'expired') return;
+  ctx.db.watch.id.update({ ...w, status: 'cancelled' });
+});
 
 // ---------- service role bootstrap ----------
 // Deploy step: right after publishing, the worker connects with its own persistent token and calls
