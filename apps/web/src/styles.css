@@ -446,7 +446,12 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 }
 .err { color: var(--rose); }
 .ask-wait { padding-top: 24px; }
-.diag { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--muted); }
+.sources-view { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 4px; }
+.sources-view h2 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
+.sources-view ul { list-style: none; margin: 0; padding: 0; }
+.sources-view li { display: flex; flex-direction: column; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.sources-view li span { color: var(--muted); font-size: 13px; }
+.sources-view .reasons li { display: list-item; list-style: disc; margin-left: 18px; border: 0; padding: 2px 0; color: var(--muted); }
 .minimap { width: 100%; height: 180px; border: 1px solid var(--line); border-radius: 12px; margin: 0 0 16px; background: var(--bg); }
 .confirm { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0 0 16px; }
 .confirm .btn { text-align: left; }
@@ -757,3 +762,7 @@ html { scrollbar-color: #b8b8b8 var(--bg); }
 .chosen-place { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: -8px 0 16px; font-size: 13px; color: var(--muted); }
 .chosen-place strong { color: var(--ink); overflow-wrap: anywhere; }
 .chosen-place .text { font-size: 13px; }
+
+.react-note { animation: react-fade 3s ease forwards; }
+@keyframes react-fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .react-note { animation: none; } }

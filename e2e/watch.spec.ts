@@ -34,7 +34,10 @@ test("notify me when seats open, then the watch reports it", async ({ browser })
 
     await asker.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Questions" }).click();
     await expect(asker.getByRole("heading", { name: "Watching" })).toBeVisible({ timeout: 20_000 });
-    await expect(asker.locator(".card").filter({ hasText: "Tell me when seats open up" }).first()).toBeVisible();
+    // The watch and its companion question are one item, not two cards saying the same thing.
+    const cards = asker.locator(".card").filter({ hasText: "Tell me when seats open up" });
+    await expect(cards).toHaveCount(1);
+    await expect(cards.first()).toContainText("First check");
 
     const ping = near.locator(".ping");
     await expect(ping).toBeVisible({ timeout: 45_000 });

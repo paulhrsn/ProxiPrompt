@@ -314,3 +314,88 @@ describe("social evidence never carries an answer on its own", () => {
     expect(r.sufficient).toBe(true);
   });
 });
+
+describe("conflicting firsthand reports", () => {
+  const req = [{ key: "seating_availability", kind: "objective" as const }];
+  const seat = (id: string, label: string, ordinal: number | null, over: Partial<ScoringObservation> = {}) =>
+    obs({ id, dimension: "seating_availability", value: label.toLowerCase(), valueLabel: label, ordinal, ...over });
+
+  it("agreeing reports are not flagged and keep High", () => {
+    const r = scoreEvidence({
+      observations: [seat("a", "Plenty", 4), seat("b", "Plenty", 4), seat("c", "Some", 3)],
+      required: req,
+      nowMs: NOW,
+    });
+    expect(r.conflicts).toEqual([]);
+    expect(r.level).toBe("High");
+  });
+
+  it("an ordinal spread of 3 (plenty vs none) caps at Low and exposes the conflict", () => {
+    const r = scoreEvidence({
+      observations: [seat("a", "Plenty", 4), seat("b", "Plenty", 4), seat("c", "None", 1)],
+      required: req,
+      nowMs: NOW,
+    });
+    expect(r.conflicts).toEqual([{ dimension: "seating_availability", severity: "severe", labels: ["None", "Plenty"] }]);
+    expect(r.level).toBe("Low");
+    expect(r.score).toBeLessThan(0.45);
+    expect(r.rawScore).toBeGreaterThan(r.score);
+  });
+
+  it("an ordinal spread of 2 caps at Medium", () => {
+    const r = scoreEvidence({
+      observations: [seat("a", "Plenty", 4), seat("b", "Plenty", 4), seat("c", "A few", 2)],
+      required: req,
+      nowMs: NOW,
+    });
+    expect(r.conflicts[0]?.severity).toBe("moderate");
+    expect(r.level).toBe("Medium");
+  });
+
+  it("a spread of 1 is not a conflict", () => {
+    const r = scoreEvidence({
+      observations: [seat("a", "Plenty", 4), seat("b", "Some", 3)],
+      required: req,
+      nowMs: NOW,
+    });
+    expect(r.conflicts).toEqual([]);
+  });
+
+  it("ignores expired reports and social posts", () => {
+    const r = scoreEvidence({
+      observations: [
+        seat("a", "Plenty", 4),
+        seat("b", "Plenty", 4),
+        seat("old", "None", 1, { invalidated: true }),
+        seat("soc", "None", 1, { sourceType: "social" }),
+      ],
+      required: req,
+      nowMs: NOW,
+    });
+    expect(r.conflicts).toEqual([]);
+  });
+
+  it("distinct values without ordinals (yes vs no) is a moderate conflict", () => {
+    const q = [{ key: "other:ask", kind: "objective" as const }];
+    const r = scoreEvidence({
+      observations: [
+        obs({ id: "a", dimension: "other:ask", value: "yes", valueLabel: "Yes", ordinal: null }),
+        obs({ id: "b", dimension: "other:ask", value: "no", valueLabel: "No", ordinal: null }),
+      ],
+      required: q,
+      nowMs: NOW,
+    });
+    expect(r.conflicts[0]?.severity).toBe("moderate");
+  });
+});
+
+describe("observation factors carry what a sources view needs", () => {
+  it("exposes label, source type, verification and age", () => {
+    const r = scoreEvidence({
+      observations: [obs({ id: "a", valueLabel: "Quiet", sourceType: "post", verifiedNearby: false, observedAtMs: NOW - 120_000, expiresAtMs: NOW + TTL_MS })],
+      required: REQ_NOISE,
+      nowMs: NOW,
+    });
+    expect(r.factors.observations[0]).toMatchObject({ valueLabel: "Quiet", sourceType: "post", verifiedNearby: false, ageS: 120 });
+  });
+});

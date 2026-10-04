@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
+import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, getDimension, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
 import { CLIENT_ID, emailOf, useDevMode, useOidc } from "./auth";
 import { clearLegacyToken, list, useDb } from "./spacetime";
 
@@ -472,7 +472,12 @@ function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const chosen = lockedPlace ?? place;
+  const [changing, setChanging] = useState(false);
+  // One step to post: default to where the user is (claimed or demo building) until they change it.
+  const here = list(conn.db.myLocation.iter())[0];
+  const hereId = here?.claimedPlaceId || localStorage.getItem("pp.demoPlace") || "";
+  const defaultPlace = CATALOG_PLACES.find((p) => p.id === hereId);
+  const chosen = lockedPlace ?? place ?? (changing ? undefined : defaultPlace);
   if (!open) return <button className="compose-trigger" type="button" onClick={() => { setErr(""); setOpen(true); }}><span className="compose-plus"><Icon name="plus" /></span><span>Post an update<small>What’s happening where you are?</small></span></button>;
   return (
     <form
@@ -497,6 +502,8 @@ function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace
     >
       {lockedPlace ? (
         <p className="chosen-place">Posting at <strong>{lockedPlace.name}</strong></p>
+      ) : !place && !changing && defaultPlace ? (
+        <p className="chosen-place">Posting at <strong>{defaultPlace.name}</strong><button className="text" type="button" onClick={() => setChanging(true)}>Change</button></p>
       ) : (
         <>
           <PlaceField place={place} onPlace={setPlace} />
@@ -600,6 +607,12 @@ function PostCard({
   const [open, setOpen] = useState(commentsOpen);
   const [reacting, setReacting] = useState(false);
   const [reactNote, setReactNote] = useState("");
+  const [reactOk, setReactOk] = useState(false);
+  useEffect(() => {
+    if (!reactNote || !reactOk) return;
+    const timer = setTimeout(() => setReactNote(""), 3000);
+    return () => clearTimeout(timer);
+  }, [reactNote, reactOk]);
   const count = Number(post.commentCount);
   async function react(text: "Still true" | "This changed") {
     if (reacting) return;
@@ -607,8 +620,10 @@ function PostCard({
     setReactNote("");
     try {
       await conn.reducers.createComment({ postId: post.postId, text, attribution: "anonymous" });
+      setReactOk(true);
       setReactNote(text === "Still true" ? "Marked still true." : "Marked as changed.");
     } catch (error) {
+      setReactOk(false);
       setReactNote((error as Error).message);
     } finally {
       setReacting(false);
@@ -631,7 +646,7 @@ function PostCard({
       {summaryAdds(post.text, post.summary) ? <p>{post.summary}</p> : null}
       {post.freshnessNote && post.freshnessState !== "fresh" && post.freshnessState !== "reinforced" ? <p className={`note ${post.freshnessState}`}>{post.freshnessNote}</p> : null}
       <button className="text" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide" : commentLabel}</button>
-      {reactNote ? <p>{reactNote}</p> : null}
+      {reactNote ? <p className={reactOk ? "react-note" : undefined} role="status">{reactNote}</p> : null}
       {open ? (
         <>
           <div className="row">
@@ -716,7 +731,9 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
   const ans = !refused && q.answerJson ? JSON.parse(q.answerJson) as {
     headline: string; summary: string; supporting?: string[]; caveats?: string[];
     confidence?: { level?: string; score?: number; ceiling?: number };
-    sourceCount?: number; updatedAtMs?: number; cacheHit?: boolean; factors?: unknown; planner?: string;
+    sourceCount?: number; updatedAtMs?: number; cacheHit?: boolean; planner?: string;
+    factors?: { observations?: SourceFactor[] };
+    conflicts?: { dimension: string; severity: string; labels: string[] }[];
   } : null;
   return (
     <section>
@@ -777,7 +794,7 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
               {ans.caveats.map((line) => <li key={line}>{plain(line)}</li>)}
             </ul>
           ) : null}
-          {diag && <pre className="diag">{JSON.stringify({ planner: ans.planner, confidence: ans.confidence, factors: ans.factors }, null, 2)}</pre>}
+          {diag && <SourcesView ans={ans} />}
         </>
       )}
       <div className="footer-actions">
@@ -790,6 +807,51 @@ function QueryDetail({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>[
       </div>
       <p className="hint">This question stays in Questions.</p>
     </section>
+  );
+}
+
+interface SourceFactor {
+  id: string; dimension: string; valueLabel?: string; sourceType?: string; verifiedNearby?: boolean;
+  ageS?: number; weight: number; contradicted: boolean;
+}
+
+const SOURCE_TYPE_LABEL: Record<string, string> = { response: "Response", post: "Post", comment: "Comment", social: "Social post" };
+
+function dimensionName(key: string): string {
+  return getDimension(key)?.label ?? "";
+}
+
+/** Plain-words view of what an answer rests on: each live report, then why confidence is what it is. */
+function SourcesView({ ans }: { ans: { confidence?: { level?: string }; sourceCount?: number; factors?: { observations?: SourceFactor[] }; conflicts?: { dimension: string; labels: string[] }[] } }) {
+  const live = (ans.factors?.observations ?? []).filter((o) => o.weight > 0).sort((a, b) => (a.ageS ?? 0) - (b.ageS ?? 0));
+  const unverified = live.filter((o) => o.sourceType !== "social" && !o.verifiedNearby).length;
+  const reasons: string[] = [];
+  for (const c of ans.conflicts ?? []) {
+    reasons.push(`Reports disagree${dimensionName(c.dimension) ? ` on ${dimensionName(c.dimension).toLowerCase()}` : ""} (${c.labels.join(" vs ")}), so confidence is held down.`);
+  }
+  if (ans.sourceCount === 1) reasons.push("Only one person reported this, so confidence stays limited.");
+  if (unverified) reasons.push(`${unverified} of ${live.length} report${live.length === 1 ? " was" : "s were"} not confirmed as coming from someone nearby.`);
+  if (live.some((o) => o.sourceType === "social")) reasons.push("Social posts add context but can't carry an answer alone.");
+  if (live.some((o) => o.contradicted)) reasons.push("A newer report contradicted an older one, so the older one counts for less.");
+  return (
+    <div className="sources-view" data-testid="sources-view">
+      <h2>Where this comes from</h2>
+      {live.length ? (
+        <ul>
+          {live.map((o) => (
+            <li key={o.id}>
+              <strong>{[dimensionName(o.dimension), o.valueLabel].filter(Boolean).join(": ") || "Report"}</strong>
+              <span>
+                {SOURCE_TYPE_LABEL[o.sourceType ?? ""] ?? "Report"} · {formatAge(o.ageS ?? 0)}
+                {o.sourceType === "social" ? "" : o.verifiedNearby ? " · Verified nearby" : " · Not verified nearby"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="hint">No live reports are behind this answer.</p>}
+      <h2>Why {ans.confidence?.level ?? "Low"} confidence</h2>
+      {reasons.length ? <ul className="reasons">{reasons.map((r) => <li key={r}>{r}</li>)}</ul> : <p className="hint">Several fresh, nearby reports agree.</p>}
+    </div>
   );
 }
 
@@ -996,12 +1058,25 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
   const queries = list(conn.db.myQueries.iter()).sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
   const prompts = list(conn.db.myPrompts.iter()).filter(isAnswerable);
   const watches = list(conn.db.myWatches.iter()).filter((w) => w.status !== "cancelled").sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+  // A watch also files a question for its first check. Show the two as one item: the watch card
+  // carries that question's status, and the question drops out of Recent questions.
+  const firstCheck = new Map<string, (typeof queries)[number]>();
+  for (const w of watches) {
+    const mate = queries
+      .filter((q) => q.text === w.text && q.placeId === w.placeId && Math.abs(toMs(q.createdAt) - toMs(w.createdAt)) <= 120_000)
+      .sort((a, b) => Math.abs(toMs(a.createdAt) - toMs(w.createdAt)) - Math.abs(toMs(b.createdAt) - toMs(w.createdAt)))[0];
+    if (mate) firstCheck.set(String(w.id), mate);
+  }
+  const pairedIds = new Set([...firstCheck.values()].map((q) => q.id));
+  const standalone = queries.filter((q) => !pairedIds.has(q.id));
   return (
     <section>
       {watches.length ? (
         <>
           <h1>Watching</h1>
           {watches.map((w) => {
+            const check = firstCheck.get(String(w.id));
+            const checkAnswer = check?.answerJson ? (JSON.parse(check.answerJson) as { headline?: string }) : null;
             const target = (() => {
               try {
                 return JSON.parse(w.targetJson || "null") as { phrase?: string } | null;
@@ -1022,6 +1097,14 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
                 <p className="body">{headline}</p>
                 <p>{w.text}</p>
                 {w.lastValue ? <p className="body">{w.lastValue}</p> : <p>I'll tell you here when it changes.</p>}
+                {check ? (
+                  <p>
+                    First check: {STATUS_LABEL[check.status] ?? check.status}
+                    {checkAnswer?.headline ? ` · ${plain(checkAnswer.headline)}` : ""}
+                    {" "}
+                    <button className="text" type="button" onClick={() => go(`/q/${check.id}`)}>See first check</button>
+                  </p>
+                ) : null}
                 {w.status === "active" || w.status === "planning" ? (
                   <button className="text" type="button" onClick={() => void conn.reducers.cancelWatch({ watchId: w.id }).catch(() => undefined)}>Stop watching</button>
                 ) : null}
@@ -1041,9 +1124,9 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
           ))}
         </>
       ) : null}
-      <h1>Recent questions</h1>
+      {standalone.length || !watches.length ? <h1>Recent questions</h1> : null}
       {queries.length === 0 ? <div className="empty"><span className="empty-icon"><Icon name="questions" /></span><h2>Curiosity starts here.</h2><p>Your questions and answers stay here,<br />ready whenever you need them.</p><button className="btn" onClick={() => go("/")}>Ask your first question</button></div> : null}
-      {queries.map((q) => {
+      {standalone.map((q) => {
         const open = OPEN_QUERY.has(q.status);
         const answer = q.answerJson
           ? (JSON.parse(q.answerJson) as { headline?: string; confidence?: { level?: string }; sourceCount?: number })
