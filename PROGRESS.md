@@ -273,3 +273,20 @@ Applied Impeccable distill and polish guidance. The context engine could not ini
 - Improved place-name wrapping with a two-column grid and made question starters wrap. Responder sheets now use consistent group spacing, actual completion counts, and sticky actions.
 - Response submissions now show Sending and prevent repeated requests while pending; AnswerForm is keyed by prompt identity to prevent answers carrying into a subsequent prompt.
 - Verification: web typecheck/production build passed; canonical real-time demo and mobile browser regression both passed (25.2s). Inspected phone and desktop captures. No physical-device frame-rate claim is made.
+
+## 2026-10-04 — Impeccable detector enabled
+
+With user authorization, installed Impeccable engine 0.1.11 through the bundled launcher's engine-probe. Both the layout-scoped detector and the broader detector completed successfully against apps/web/src/App.tsx and apps/web/src/styles.css, each returning [] (no findings). This closes the previously documented detector verification gap; it does not replace browser or physical-device testing.
+
+## 2026-10-04 — Profile settings clarity
+
+- Reorganized You into identity, location, notifications, developer tools, and account sections with short explanations and explicit actions. Replaced the floating “Dev on” toggle with a named demo-session control in Developer tools; the signed-out route exposes “Use demo session” only when OIDC is configured.
+- Explained nearby matching and location privacy; distinguished the simulated mode from its selected place and labeled the map. Removed an unexpected notification-permission request from location selection; phone notifications now have their own explicit enable action.
+- Clarified pause requests, diagnostics, and the scope of clearing shared activity. Build and Impeccable detector pass.
+
+
+## 2026-10-04 — Composer and developer row follow-up
+
+- Post composer now shows the selected place, names the attribution choice, explains anonymity/profile attribution, and says whether a place or update is needed before posting. The primary action is labeled “Post update.”
+- Rebuilt developer settings rows with explicit flex layout and multiline descriptions to stop the diagnostic control and shared activity explanation from colliding.
+- Build and layout detector pass.

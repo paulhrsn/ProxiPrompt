@@ -116,7 +116,7 @@ export default function App() {
           <button type="button" aria-current={tab === "you" ? "page" : undefined} className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
         </nav>
       ) : null}
-      <button aria-label={dev ? "Dev on" : "Dev"} title="Toggle developer session" className={`dev-toggle${dev ? " on" : ""}`} onClick={() => setDev(!dev)}>{dev ? "Dev on" : "Dev"}</button>
+      {!signedIn && CLIENT_ID ? <button className="sign-in-demo" type="button" onClick={() => setDev(true)}>Use demo session</button> : null}
     </div>
   );
 }
@@ -139,16 +139,20 @@ function SignedOut() {
   const [email, setEmail] = useState("");
   if (!CLIENT_ID) {
     return (
-      <section className="ask">
-
-        <h1>Know before you go.</h1>
-        <p>Get a little local knowledge from the people already there.</p><p className="hint">Welcome to the ProxiPrompt demo.</p><button className="btn" onClick={() => setDev(true)}>Explore the demo</button>
+      <section className="welcome" aria-labelledby="welcome-title">
+        <div className="welcome-intro">
+          <h1 id="welcome-title">Know before you go.</h1>
+          <p>Get a little local knowledge from the people already there.</p>
+        </div>
+        <div className="welcome-actions">
+          <button className="btn" onClick={() => setDev(true)}>Explore the demo<Icon name="arrow" /></button>
+          <p className="hint">You’ll choose a name next.</p>
+        </div>
       </section>
     );
   }
   return (
-    <section className="ask">
-
+    <section className="sign-in">
       <h1>Sign in</h1>
       <label className="label">
         Email
@@ -487,17 +491,32 @@ function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace
         }
       }}
     >
-      {lockedPlace ? null : <PlaceField place={place} onPlace={setPlace} />}
+      {lockedPlace ? (
+        <p className="chosen-place">Posting at <strong>{lockedPlace.name}</strong></p>
+      ) : (
+        <>
+          <PlaceField place={place} onPlace={setPlace} />
+          {place ? <p className="chosen-place">Selected place: <strong>{place.name}</strong><button className="text" type="button" onClick={() => setPlace(null)}>Change</button></p> : null}
+        </>
+      )}
       <label className="label">
         Update
         <textarea className="input" maxLength={280} rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Third floor is quiet." />
       </label>
-      {err ? <p className="err">{err}</p> : null}
-      <div className="row">
-        <button className="control" type="button" onClick={() => setAttr(attr === "anonymous" ? "profile" : "anonymous")}>{attr === "anonymous" ? "Anonymous" : "Your name"}</button>
-        <button className="text" type="button" onClick={() => { setOpen(false); setErr(""); }}>Cancel</button>
+      <fieldset className="attribution-choice">
+        <legend>Post as</legend>
+        <div className="attribution-options" role="group" aria-label="Choose who can see your name">
+          <button className={attr === "anonymous" ? "selected" : ""} type="button" aria-pressed={attr === "anonymous"} onClick={() => setAttr("anonymous")}>Anonymous</button>
+          <button className={attr === "profile" ? "selected" : ""} type="button" aria-pressed={attr === "profile"} onClick={() => setAttr("profile")}>Your name</button>
+        </div>
+        <p>{attr === "anonymous" ? "Your name won’t appear with this update." : `Your profile name, ${list(conn.db.myProfile.iter())[0]?.username ?? ""}, will appear with this update.`}</p>
+      </fieldset>
+      {err ? <p className="err" role="alert">{err}</p> : null}
+      {!chosen || !text.trim() ? <p className="composer-guidance">{!chosen ? "Choose a place to enable posting." : "Write an update to enable posting."}</p> : null}
+      <div className="composer-actions">
+        <button className="btn" type="submit" disabled={busy || !chosen || text.trim().length < 1}>{busy ? "Posting…" : "Post update"}</button>
+        <button className="text" type="button" disabled={busy} onClick={() => { setOpen(false); setErr(""); }}>Cancel</button>
       </div>
-      <button className="btn" type="submit" disabled={busy || !chosen || text.trim().length < 1}>{busy ? "Posting…" : "Post"}</button>
     </form>
   );
 }
@@ -1146,8 +1165,14 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
 
   return (
     <section>
-      <h1>You</h1><div className="profile-avatar" aria-hidden="true">{shown.slice(0, 1).toUpperCase() || "?"}</div>
-      {emailOf(auth) ? <p>{emailOf(auth)}</p> : null}
+      <h1>You</h1>
+      <div className="identity-card">
+        <div className="profile-avatar" aria-hidden="true">{shown.slice(0, 1).toUpperCase() || "?"}</div>
+        <div className="identity-copy"><span className="identity-label">Your profile</span>
+          {emailOf(auth) ? <span className="identity-email">{emailOf(auth)}</span> : null}
+        </div>
+      </div>
+      {dev ? <p className="demo-explainer"><strong>Demo session</strong><span>No account sign-in required. This demo identity is saved in this browser.</span></p> : null}
       {editing ? (
         <form
           className="stack"
@@ -1187,7 +1212,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
           <button className="btn" type="submit" disabled={saving || draft.trim().length < 3}>{saving ? "Saving…" : "Save name"}</button>
         </form>
       ) : (
-        <button className="name" onClick={() => { setDraft(""); setNameErr(""); setEditing(true); }}>{shown}</button>
+        <button className="name" aria-label={`Edit profile name, ${shown}`} onClick={() => { setDraft(""); setNameErr(""); setEditing(true); }}><span>{shown}</span><span className="edit-label">Edit</span></button>
       )}
       <ImpactLine conn={conn} />
       {(() => {
@@ -1206,12 +1231,19 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         const showChoices = !claimed && nearbyOptions.length > 1;
         return (
           <>
-            <div className="status">
-              <p
-                className={gpsError && !demo && !label ? "status-readout bad" : "status-readout"}
-                data-testid={loc?.source === "demo" ? "demo-location" : undefined}
-              >{demo ? "Simulated location" : label ?? (gpsError || "Finding your location…")}</p>
-            </div>
+            <section className="location-section" aria-labelledby="location-heading">
+              <div className="section-heading"><h2 id="location-heading">Your location</h2><p>Used to match nearby requests. Your precise coordinates aren’t shown to other users.</p></div>
+              <div className="location-readout">
+                <span className="location-indicator" aria-hidden="true" />
+                <div><span className="location-caption">{demo ? "Demo location · simulated" : gpsError && !label ? "Location unavailable" : label ? "Approximate area" : "Location status"}</span>
+                  <p className={gpsError && !demo && !label ? "status-readout bad" : "status-readout"} data-testid={loc?.source === "demo" ? "demo-location" : undefined}>
+                    {demo ? "Simulated location" : label ?? (gpsError || "Finding your location…")}
+                  </p>
+                  {demo ? <span className="selected-location">{CATALOG_PLACES.find((p) => p.id === demo)?.name}</span> : null}
+                </div>
+              </div>
+              {gpsError && !demo && !label ? <p className="location-help">Allow location access in your browser settings, or choose a demo location below.</p> : null}
+            </section>
             {showChoices ? (
               <div className="confirm">
                 {nearbyOptions.map((place) => (
@@ -1232,13 +1264,14 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
                 <button className="text" type="button" onClick={() => savePlaceClaim(null, setClaim)}>Not this building</button>
               </>
             ) : null}
-            {mapPoint ? <MiniMap lat={mapPoint.lat} lng={mapPoint.lng} /> : null}
+            {mapPoint ? <div className="location-map"><h3>Map view</h3><MiniMap lat={mapPoint.lat} lng={mapPoint.lng} /></div> : null}
           </>
         );
       })()}
-      <label className="label">
-        Location
-      <select className="input" value={demo} onChange={(e) => {
+      <div className="setting-section">
+      <label className="label" htmlFor="demo-location-select">Location</label>
+      <p className="section-help">Use your GPS or pick a simulated campus location for the demo.</p>
+      <select id="demo-location-select" className="input" value={demo} onChange={(e) => {
         const next = e.target.value;
         if (next) localStorage.setItem("pp.demoPlace", next);
         else {
@@ -1247,35 +1280,48 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
         }
         setGpsError("");
         setDemo(next);
-        if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
       }}>
         <option value="">Use real GPS</option>
         {DEMO_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
-      </label>
-      {pushMsg && <p>{pushMsg}</p>}
-      <div className="group">
-        <button type="button" onClick={async () => {
-          await conn.reducers.setNotificationsPaused({ paused: !paused });
-          setPaused(!paused);
-        }}>{paused ? "Resume prompts" : "Pause prompts"}</button>
-        <button type="button" onClick={() => enablePush(conn).then(setPushMsg).catch((e) => setPushMsg((e as Error).message))}>Enable notifications</button>
-        <label className="setting">
-          <span>Developer diagnostics</span>
+      </div>
+      <section className="preferences-section" aria-labelledby="preferences-heading">
+        <h2 id="preferences-heading">Notifications</h2>
+        <p className="section-help">Choose whether to answer nearby questions and receive alerts.</p>
+        <div className="group">
+          <button className="setting-button" type="button" aria-pressed={!paused} onClick={async () => {
+            await conn.reducers.setNotificationsPaused({ paused: !paused });
+            setPaused(!paused);
+          }}><span><strong>{paused ? "Requests paused" : "Answer requests"}</strong><small>{paused ? "You won’t be asked to answer nearby questions." : "Allow nearby people to ask you about places."}</small></span><span className={`switch ${paused ? "off" : ""}`} aria-hidden="true" /></button>
+          <button className="setting-button" type="button" onClick={() => enablePush(conn).then(setPushMsg).catch((e) => setPushMsg((e as Error).message))}><span><strong>Enable phone notifications</strong><small>Get an alert when someone needs a nearby update.</small></span><span className="setting-chevron" aria-hidden="true">›</span></button>
+        </div>
+        {pushMsg && <p className="inline-feedback" role="status">{pushMsg}</p>}
+      </section>
+      {(import.meta.env.DEV || CLIENT_ID) ? <section className="preferences-section developer-section" aria-labelledby="developer-heading">
+        <h2 id="developer-heading">Developer tools</h2>
+        <p className="section-help">Options used to test this app.</p>
+        <div className="group">
+        {CLIENT_ID ? <button className="setting-button" type="button" aria-pressed={dev} onClick={() => setDev(!dev)}><span><strong>Demo session</strong><small>{dev ? "Using a local demo identity instead of sign-in." : "Switch to a local demo identity."}</small></span><span className={`switch ${dev ? "" : "off"}`} aria-hidden="true" /></button> : null}
+        <label className="setting-button">
+          <span><strong>Developer diagnostics</strong><small>Show technical connection details for troubleshooting.</small></span>
           <input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); localStorage.setItem("pp.diag", e.target.checked ? "1" : "0"); }} />
         </label>
         {import.meta.env.DEV ? <DevWipeButton onDone={setToast} /> : null}
-        <button
-          type="button"
-          onClick={() => {
+        </div>
+      </section> : null}
+      <section className="preferences-section account-section" aria-labelledby="account-heading">
+        <h2 id="account-heading">Account</h2>
+        <div className="group">
+        <button className="setting-button" type="button" onClick={() => {
             clearLegacyToken();
             setDev(false);
             if (auth) void auth.signoutRedirect().catch(() => auth.removeUser());
           }}
         >
-          Sign out
+          <span><strong>Sign out</strong><small>Leave this session on this device.</small></span><span className="setting-chevron" aria-hidden="true">›</span>
         </button>
-      </div>
+        </div>
+      </section>
       {toast ? <p className="toast" role="status">{toast}</p> : null}
     </section>
   );
@@ -1316,9 +1362,7 @@ function DevWipeButton({ onDone }: { onDone: (msg: string) => void }) {
         }
       }}
     >
-      {!local
-        ? "Wipe activity (dev): open localhost:5173 on the laptop"
-        : busy ? "Wiping…" : armed ? "Tap again to wipe all activity" : "Wipe activity (dev)"}
+      <span><strong>{!local ? "Clear demo activity" : busy ? "Clearing activity…" : armed ? "Tap again to clear activity" : "Clear demo activity"}</strong><small>{!local ? "Open this page on localhost to use this option." : "Removes demo questions, answers, and posts for everyone using this database."}</small></span>
     </button>
   );
 }

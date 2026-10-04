@@ -31,3 +31,12 @@ The responder's successful contribution is the focal motion: a brief checkmark d
 The tab highlight slides between destinations over 240ms; keyboard focus changes it immediately. Question starters visibly retain selection until edited. Place search fades into view and its disclosure chevron turns. Reduced motion uses a short success fade with a static checkmark and instant navigation highlights.
 
 Layout uses 8px tight spacing, 16px within groups, and 24px between sections. Place name and Change occupy separate grid columns, with the address spanning both. Question starters wrap on small screens instead of hiding an option in a horizontal scroller. No new brand elements or colors are introduced.
+
+The signed-out demo welcome uses its own full-height layout: a two-line headline and short explanation form one group, with the entry action and next-step hint near the bottom. It does not inherit composer spacing. Hide the developer-session shortcut on this screen when the demo action already provides entry.
+
+## Profile and settings clarity
+
+The profile groups identity, current location, location choice, notifications, developer tools, and sign-out under explicit headings. Explain that location supports nearby matching and that precise coordinates are not shown to other users. Label simulated locations and show the selected place separately. Request location permission only through the location choice, and push permission only through its explicit enable action. Keep demo-session and activity-clearing controls inside Developer tools; state the shared activity that clearing removes.
+
+
+Post composition shows the chosen place, labels attribution as “Post as,” states who will see the author’s name, and explains which required input is still missing when Post is disabled. Developer settings use explicit wrapped rows for diagnostic switches and destructive activity controls.

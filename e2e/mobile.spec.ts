@@ -39,3 +39,21 @@ test("mobile layout, question starters, place search and navigation", async ({ p
   await expect(page.locator("form.ask")).toHaveCSS("animation-name", "none");
   expect(errors).toEqual([]);
 });
+
+
+test("signed-out welcome has a clear entry action at phone and desktop sizes", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pp.devMode", "0"));
+  await page.goto("/");
+  const welcome = page.getByRole("heading", { name: "Know before you go." });
+  await expect(welcome).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dev", exact: true })).toHaveCount(0);
+  for (const width of [320, 390, 1024]) {
+    await page.setViewportSize({ width, height: 844 });
+    const action = await page.getByRole("button", { name: "Explore the demo" }).boundingBox();
+    expect(action!.y + action!.height).toBeLessThan(844);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/welcome-${width}.png`, fullPage: true });
+  }
+  await page.getByRole("button", { name: "Explore the demo" }).click();
+  await expect(page.getByRole("heading", { name: "Your name" })).toBeVisible();
+});
