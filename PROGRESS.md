@@ -84,6 +84,7 @@ Events:
 - 2026-10-04: base `106acec` (after `git pull` of Syn's UI commits). Worktrees created; local tokens copied to L1/L4.
 - L1-L4 dispatched in parallel to Sonnet workers.
 - L3 done `0e372f9`: Known issues rewritten (e2e path corrected, stale VAPID line replaced with the real gap: iPhone push untested, ASI:One status line removed, env-file and human-only bullets added, reciprocal marked in progress). Orchestrator verified: diff touches only that section, 0 dashes, e2e guard claim matches `services/orchestrator/scripts/e2e.ts`. Merged to main.
+- L2 reported `c7bc659`: `ORCH_BRIDGE_TOKEN` gates both `/asi/query` routes (constant-time compare, 401), fails closed with 503 on a non-loopback `ORCH_HOST` with no token; `bridge.py` sends the Bearer header. Orchestrator re-ran in the lane: orchestrator 55/55, agent 148/148, typecheck clean, 0 dashes. Sent back for one fix: orchestrator did not trim the token while the agent does (trailing space in a .env would 401 every chat).
 
 ## Work log
 - 2026-10-04 session 14: **Prompt expiry and cleanup are scheduled in the database.** `prompt_expiry_schedule` sets `prompt_batch.expired` when the card's clock hits, with no worker running (guardrails). `gc_schedule` repeats every 10 minutes and deletes observations that expired more than 600s ago plus rate buckets older than 2 hours. A report that expired 10s ago is kept, so a late answer can still use it. Guardrails 72/72.
