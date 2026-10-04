@@ -58,7 +58,7 @@ async function answerPrompt(page: Page) {
   const send = ping.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeEnabled();
   await send.click();
-  await expect(page.getByText(/signal sent/i)).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /signal sent/i })).toBeVisible();
 }
 
 test("canonical demo: nearby answers, far is skipped, second ask reuses evidence", async ({ browser }) => {

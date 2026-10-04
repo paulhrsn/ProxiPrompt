@@ -250,3 +250,26 @@ Gaps, in order of judge impact:
 1. **Auth is anonymous "dev auth".** `VITE_SPACETIMEAUTH_CLIENT_ID` unset, so SpacetimeAuth magic-link login is not in use. Needs a SpacetimeAuth project (human) then a short wiring check.
 2. **Runs on local `spacetime start`, not MainCloud.** `spacetime login` + publish to MainCloud (human login) makes it a real hosted demo.
 
+
+## 2026-10-04 — Mobile UI overhaul
+
+- Reworked the mobile visual system: system-font large titles, rounded grouped surfaces, muted provisional palette, safe-area-aware four-tab navigation, profile identity, and clearer post/empty states.
+- Ask now has a decorative place illustration, selected destination, an expandable Change control, editable question starters, and a primary action visible above the tab bar at 390×844. Backend query/watch contracts remain intact.
+- Added transform/opacity entrances, press feedback, sheet easing, touch-safe hover rules, and reduced-motion fades. Question cards are native buttons; place search uses a properly associated label and accessible suggestion buttons. Navigation resets scroll position.
+- Updated DESIGN.md. Final palette remains a team decision.
+- Validation: web typecheck + production build passed. Canonical browser demo passed (nearby responses and cached evidence). New mobile test passed (question starters, place changes, composer, navigation, primary-button positioning, 320/390/430/1024-width overflow checks, reduced motion, no page errors). Watch browser test passed on a fresh isolated database.
+- Existing suite isolation issue: running canonical and watch sequentially against the same database left earlier evidence influencing the watch result; watch timed out in that combined run, then passed in isolation. No backend changes made for this UI task.
+- Browser screenshots: test-results/mobile-home.png and test-results/mobile-posts.png (generated, ignored). Physical iPhone/Safari and Web Push were not tested.
+
+
+## 2026-10-04 — Impeccable refinement
+
+Applied Impeccable distill and polish guidance. The context engine could not initialize in its restricted cache directory, so PRODUCT.md and DESIGN.md supplied context directly. Removed the invented mark, decorative map, introductory eyebrows, and redundant reassurance copy. Product name remains plain text; the PWA icon is a text-only placeholder. All authored palette values are grayscale, including confidence badges with their explicit labels preserved. Increased small control text, standardized SVG action icons, and removed repeated screen entrance animations. Build and the mobile browser regression pass succeeded, including phone/desktop captures, question starters, place selection, navigation, overflow, reduced motion, and page-error checks.
+
+## 2026-10-04 — Impeccable animate, delight, layout
+
+- Applied the three requested playbooks directly; the mechanical layout detector remains unavailable because the local Impeccable engine is not installed and its cache directory is restricted.
+- Added a sliding tab selection, persistent question-starter selection, disclosure feedback, and one restrained success checkmark with a polite status announcement. Reduced-motion alternatives preserve confirmation without spatial movement.
+- Improved place-name wrapping with a two-column grid and made question starters wrap. Responder sheets now use consistent group spacing, actual completion counts, and sticky actions.
+- Response submissions now show Sending and prevent repeated requests while pending; AnswerForm is keyed by prompt identity to prevent answers carrying into a subsequent prompt.
+- Verification: web typecheck/production build passed; canonical real-time demo and mobile browser regression both passed (25.2s). Inspected phone and desktop captures. No physical-device frame-rate claim is made.

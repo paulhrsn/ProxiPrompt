@@ -1,108 +1,33 @@
----
-name: ProxiPrompt
-description: A phone for asking what a place is like right now.
-colors:
-  bone: "#F7F6F3"
-  sheet: "#FFFFFF"
-  ink: "#2F3437"
-  black: "#111111"
-  muted: "#787774"
-  line: "#EAEAEA"
-  field-line: "#DEDCD6"
-  high: "#346538"
-  high-wash: "#EDF3EC"
-  medium: "#956400"
-  medium-wash: "#FBF3DB"
-  low: "#9F2F2D"
-  low-wash: "#FDEBEC"
-typography:
-  body:
-    fontFamily: "SF Pro Display, Helvetica Neue, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "16px"
-    fontWeight: 400
-    lineHeight: 1.6
-    letterSpacing: "normal"
-  title:
-    fontFamily: "Iowan Old Style, Palatino, Georgia, serif"
-    fontSize: "32px"
-    fontWeight: 500
-    lineHeight: 1.1
-    letterSpacing: "-0.03em"
-  label:
-    fontFamily: "SF Pro Display, Helvetica Neue, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "13px"
-    fontWeight: 600
-    lineHeight: 1.4
-    letterSpacing: "normal"
-rounded:
-  button: "6px"
-  field: "8px"
-  card: "12px"
-spacing:
-  screen-x: "20px"
-  stack: "16px"
-  control-height: "48px"
-  tap: "44px"
-components:
-  button-primary:
-    backgroundColor: "{colors.black}"
-    textColor: "#FFFFFF"
-    rounded: "{rounded.button}"
-    padding: "0 18px"
-    height: "48px"
-    width: "100%"
-  button-primary-hover:
-    backgroundColor: "#333333"
-    textColor: "#FFFFFF"
-  button-secondary:
-    backgroundColor: "{colors.sheet}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.button}"
-  field:
-    backgroundColor: "{colors.sheet}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.field}"
-    height: "48px"
-    padding: "12px 14px"
-  status-card:
-    backgroundColor: "{colors.sheet}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.card}"
-    padding: "22px 18px 18px"
-  tab-bar:
-    backgroundColor: "{colors.sheet}"
-    textColor: "{colors.muted}"
-    height: "56px"
----
+# ProxiPrompt mobile design
 
-## Overview
+ProxiPrompt is a mobile app for knowing what a place is like before you go. The interface uses iOS conventions: large system-font titles, rounded grouped surfaces, persistent bottom navigation, generous touch targets, and a responder sheet that preserves the current screen.
 
-ProxiPrompt is a phone-width app on a warm bone ground. Titles are serif. Everything you can change is a white field with a hairline border. Ask is a black button. Three tabs sit on the thumb: Ask, Posts, and You. A prompt arrives as a sheet over the current screen.
+## Foundation
 
-## Colors
+The app fills a phone viewport and is centered in a 460px column on desktop. Respect top and bottom safe areas. Use 24px horizontal padding (18px on narrow phones), 44px minimum controls, and 54px primary actions. Inputs use at least 16px text to avoid iOS focus zoom.
 
-Bone is the page. White is every field, card, and sheet. Rules are #EAEAEA. Type is off-black, never pure black for body copy. The only solid dark fill is the primary button and a selected chip or segment. High, Medium, and Low use the pale green, yellow, and red washes.
+Use the system font stack; headings are bold, tightly spaced sans serif. Headings stand alone; explanatory copy stays sentence case. Cards use 16px corners and controls use 12–16px corners.
 
-## Typography
+The palette is strictly neutral: white, gray, and charcoal, with no hue accents. Branding is deferred: show the plain product name, with no assumed logo or stylized wordmark. The installable app icon is a text-only placeholder. High/Medium/Low retain explicit written labels and distinct neutral fills.
 
-Titles and the location readout use Iowan Old Style, Palatino, or Georgia. Controls, labels, and body use SF Pro Display or Helvetica Neue. Diagnostics use SF Mono. Do not load Inter, Roboto, or Open Sans.
+## Screens
 
-## Layout
+- Ask: a clear invitation, compact selected-place card, expandable place search, question composer with editable starters, Ask, and an optional watch action.
+- Questions: saved questions, status, evidence, and active watches. Entire question cards are keyboard-accessible buttons. Empty states explain the next action.
+- Posts: full-width sort segment, place filters, an obvious update composer, and readable individual post cards.
+- You: identity, location, privacy, notifications, and demo controls in grouped rows. Simulated location stays explicitly labeled.
+- Respond: a rounded sheet over the current screen, large radio choices, optional note, Send, and Not now.
 
-The column is 430px, centered, with 20px side padding and safe-area insets. Root screens keep the tab bar. The Ask control sits at the bottom of a short ask screen. Do not add a second navigation row.
+Keep the four destinations Ask / Questions / Posts / You. Show selected navigation with both a background and aria-current. Preserve evidence confidence, provenance, insufficient-evidence states, and the real-time backend contracts.
 
-## Elevation & Depth
+## Motion
 
-Flat. The prompt sheet is the one shadow: `0 -2px 8px rgba(0,0,0,0.04)`. No gradients and no glow.
+Press feedback scales to 0.97 over 150ms. Tab screens appear immediately; composer entrances use a 6px translation with opacity over 180ms. The responder sheet uses 280ms with the iOS-style cubic-bezier(.32,.72,0,1). Only transforms and opacity animate spatially; no looping decorative animations. Reduced motion replaces entrances with a short fade and removes press scaling. Gate new hover effects to fine pointers.
 
-## Shapes
+## Interaction refinements
 
-Buttons are 6px. Fields and option chips are 8px. Cards, the status block, and groups are 12px. Confidence badges are the only pills.
+The responder's successful contribution is the focal motion: a brief checkmark draw with a polite status announcement. It confirms a completed submission without delaying the real result. Sending disables repeated submission and shows a truthful pending label. Response progress reflects actual selected answers, and actions remain sticky inside a long responder sheet.
 
-## Components
+The tab highlight slides between destinations over 240ms; keyboard focus changes it immediately. Question starters visibly retain selection until edited. Place search fades into view and its disclosure chevron turns. Reduced motion uses a short success fade with a static checkmark and instant navigation highlights.
 
-Every text input, textarea, and select is white with a 1px #DEDCD6 border. A value you can switch — anonymous or your name, a place on a post, comment count — uses the same bordered control, not plain text. The profile name is a bordered field; tapping it edits. Selected radios and place chips use a black edge or a black fill. Disabled primary buttons drop to a white field with muted type.
-
-## Do's and Don'ts
-
-Do keep simulated location labeled simulated. Do not fill a large region with a bright color. Do not use phosphor, a dark status capsule, or a forest-green button. Do not cover the sort control with the Dev toggle.
+Layout uses 8px tight spacing, 16px within groups, and 24px between sections. Place name and Change occupy separate grid columns, with the address spanning both. Question starters wrap on small screens instead of hiding an option in a horizontal scroller. No new brand elements or colors are introduced.

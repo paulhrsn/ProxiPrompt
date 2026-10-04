@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CATALOG_PLACES, DEFAULT_COMMUNITY, describeLocation, formatAge, freshnessNote, haversineM, neighboringPlaces, rankPosts, type CatalogPlace } from "@proxiprompt/core";
 import { CLIENT_ID, emailOf, useDevMode, useOidc } from "./auth";
 import { clearLegacyToken, list, useDb } from "./spacetime";
@@ -69,6 +69,10 @@ export default function App() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [route]);
+
   const profile = conn ? list(conn.db.myProfile.iter())[0] : undefined;
   void tick;
   const showTabs = Boolean(signedIn && profile && conn && route.name !== "respond");
@@ -81,6 +85,7 @@ export default function App() {
 
   return (
     <div className={showTabs ? "app with-tabs" : "app"}>
+      <header className="app-header"><a className="brand" href="#/" aria-label="ProxiPrompt home">ProxiPrompt</a><span className="community-label">Ann Arbor</span></header>
       {pushed && signedIn ? (
         <button className="back" type="button" onClick={() => history.back()}>
           <Icon name="back" /> Back
@@ -91,6 +96,7 @@ export default function App() {
       {!signedIn && !auth?.isLoading ? <SignedOut /> : null}
       {signedIn && !conn && !auth?.isLoading ? <p className="ask-wait">Reconnecting.</p> : null}
       {signedIn && !profile && conn ? <Onboard conn={conn} /> : null}
+      <main id="main-content">
       {signedIn && profile && conn ? (
         route.name === "home" ? <Home conn={conn} /> :
         route.name === "query" ? <QueryDetail conn={conn} id={route.id} /> :
@@ -100,23 +106,27 @@ export default function App() {
         route.name === "profile" ? <Profile conn={conn} /> :
         <PlacePage conn={conn} id={route.id} />
       ) : null}
+      </main>
       {signedIn && profile && conn && route.name !== "respond" ? <PromptPing conn={conn} /> : null}
       {showTabs ? (
-        <nav className="tabbar" aria-label="Primary">
-          <button type="button" className={tab === "ask" ? "tab on" : "tab"} onClick={() => conn && go(askTarget(conn))}><Icon name="ask" />Ask</button>
-          <button type="button" className={tab === "questions" ? "tab on" : "tab"} onClick={() => go("/activity")}><Icon name="questions" />Questions</button>
-          <button type="button" className={tab === "posts" ? "tab on" : "tab"} onClick={() => go("/posts")}><Icon name="posts" />Posts</button>
-          <button type="button" className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
+        <nav className="tabbar" data-active={tab} aria-label="Primary">
+          <button type="button" aria-current={tab === "ask" ? "page" : undefined} className={tab === "ask" ? "tab on" : "tab"} onClick={() => conn && go(askTarget(conn))}><Icon name="ask" />Ask</button>
+          <button type="button" aria-current={tab === "questions" ? "page" : undefined} className={tab === "questions" ? "tab on" : "tab"} onClick={() => go("/activity")}><Icon name="questions" />Questions</button>
+          <button type="button" aria-current={tab === "posts" ? "page" : undefined} className={tab === "posts" ? "tab on" : "tab"} onClick={() => go("/posts")}><Icon name="posts" />Posts</button>
+          <button type="button" aria-current={tab === "you" ? "page" : undefined} className={tab === "you" ? "tab on" : "tab"} onClick={() => go("/profile")}><Icon name="you" />You</button>
         </nav>
       ) : null}
-      <button className={`dev-toggle${dev ? " on" : ""}`} onClick={() => setDev(!dev)}>{dev ? "Dev on" : "Dev"}</button>
+      <button aria-label={dev ? "Dev on" : "Dev"} title="Toggle developer session" className={`dev-toggle${dev ? " on" : ""}`} onClick={() => setDev(!dev)}>{dev ? "Dev on" : "Dev"}</button>
     </div>
   );
 }
 
-function Icon({ name }: { name: "ask" | "posts" | "you" | "back" | "questions" }) {
+function Icon({ name }: { name: "ask" | "posts" | "you" | "back" | "questions" | "arrow" | "chevron" | "plus" }) {
   const props = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
-  if (name === "ask") return <svg {...props}><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" /></svg>;
+  if (name === "ask") return <svg {...props}><path d="M14 5 19 10M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z" /></svg>;
+  if (name === "arrow") return <svg {...props}><path d="M5 12h14m-6-6 6 6-6 6" /></svg>;
+  if (name === "chevron") return <svg {...props}><path d="m8 10 4 4 4-4" /></svg>;
+  if (name === "plus") return <svg {...props}><path d="M12 5v14M5 12h14" /></svg>;
   if (name === "questions") return <svg {...props}><path d="M4.5 6.5h15v9h-8l-4 3.5v-3.5h-3z" /></svg>;
   if (name === "posts") return <svg {...props}><path d="M5 7h14M5 12h14M5 17h9" /></svg>;
   if (name === "back") return <svg {...props} width={20} height={20}><path d="M14.5 6.5 9 12l5.5 5.5" /></svg>;
@@ -125,19 +135,20 @@ function Icon({ name }: { name: "ask" | "posts" | "you" | "back" | "questions" }
 
 function SignedOut() {
   const auth = useOidc();
+  const { setDev } = useDevMode();
   const [email, setEmail] = useState("");
   if (!CLIENT_ID) {
     return (
       <section className="ask">
-        <p className="mark">ProxiPrompt</p>
-        <h1>Sign in</h1>
-        <p>Add VITE_SPACETIMEAUTH_CLIENT_ID, or turn on Dev.</p>
+
+        <h1>Know before you go.</h1>
+        <p>Get a little local knowledge from the people already there.</p><p className="hint">Welcome to the ProxiPrompt demo.</p><button className="btn" onClick={() => setDev(true)}>Explore the demo</button>
       </section>
     );
   }
   return (
     <section className="ask">
-      <p className="mark">ProxiPrompt</p>
+
       <h1>Sign in</h1>
       <label className="label">
         Email
@@ -160,7 +171,7 @@ function Onboard({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
   const [err, setErr] = useState("");
   return (
     <section>
-      <h1>Your name</h1>
+      <h1>Your name</h1><p className="onboard-copy">A familiar face, wherever you go. Your updates are anonymous by default.</p>
       <label className="label">
         Name
         <input className="input" placeholder="lowercase_name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -202,6 +213,7 @@ async function waitForQueryId(
 }
 
 function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> }) {
+  const [choosingPlace, setChoosingPlace] = useState(false);
   const [q, setQ] = useState("");
   const [place, setPlace] = useState<CatalogPlace | null>(CATALOG_PLACES[0]);
   const [busy, setBusy] = useState(false);
@@ -260,21 +272,21 @@ function Home({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]> })
 
   return (
     <form className="ask" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
-      <p className="mark">ProxiPrompt</p>
-      <div className="status">
-        <h1>{place?.name ?? "Where?"}</h1>
-        <p>Ask someone who is there.</p>
+      <div className="home-intro"><h1>Know before<br />you go.</h1><p>Real places. People there. Answers now.</p></div>
+      <div className="place-preview">
+        <div className="place-info"><button className="change-place" type="button" aria-controls="place-picker" aria-expanded={choosingPlace} onClick={() => setChoosingPlace(!choosingPlace)}>Change <Icon name="chevron" /></button><h2>{place?.name ?? "Where are you headed?"}</h2><p>{place?.address ?? "Find a place below to get started."}</p></div>
       </div>
-      <PlaceField place={place} onPlace={setPlace} />
-      <label className="label">
-        Question
-        <textarea className="input" rows={3} placeholder="What’s it like there right now?" value={q} onChange={(e) => setQ(e.target.value)} />
-      </label>
+      {choosingPlace ? <div id="place-picker" className="place-picker"><PlaceField place={place} onPlace={(next) => { setPlace(next); if (next) setChoosingPlace(false); }} label="Place" /></div> : null}
+      <div className="question-compose"><label className="label" htmlFor="question">Question</label>
+        <textarea id="question" className="input" rows={3} placeholder="What would you like to know?" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="question-starters" role="group" aria-label="Try an idea">{["Is it busy?", "Any seats open?", "Is it quiet?"].map((idea) => <button key={idea} type="button" aria-pressed={q === idea} onClick={() => { setQ(idea); document.getElementById("question")?.focus(); }}>{idea}</button>)}</div>
+      </div>
       {err && <p className="err">{err}</p>}
       <div className="actions">
-        <button className="btn" type="submit" disabled={busy || !place || q.trim().length < 3}>{busy ? "Asking…" : "Ask"}</button>
-        <button className="btn ghost" type="button" disabled={busy || !place || q.trim().length < 3} onClick={() => void notify()}>Notify me when</button>
+        <button className="btn" type="submit" disabled={busy || !place || q.trim().length < 3}>{busy ? "Asking…" : "Ask"}<Icon name="arrow" /></button>
+        <button className="btn ghost" type="button" disabled={busy || !place || q.trim().length < 3} onClick={() => void notify()}>Notify me when things change</button>
       </div>
+
     </form>
   );
 }
@@ -304,6 +316,7 @@ function PlaceField({
   label?: string;
   placeholder?: string;
 }) {
+  const fieldId = useId();
   const [filter, setFilter] = useState("");
   const [remote, setRemote] = useState<CatalogPlace[]>([]);
   const suggestions = useMemo(() => {
@@ -335,11 +348,12 @@ function PlaceField({
     };
   }, [filter]);
   return (
-    <label className="label">
-      {label}
+    <div className="label">
+      <label htmlFor={fieldId}>{label}</label>
       <input
+        id={fieldId}
         className="input"
-        placeholder={placeholder ?? (place ? "Change place" : "Search places")}
+        placeholder={placeholder ?? (place ? "Search for another place" : "Search places")}
         value={filter}
         onChange={(e) => {
           setFilter(e.target.value);
@@ -347,17 +361,17 @@ function PlaceField({
         }}
       />
       {filter.trim().length >= 2 ? (
-        <ul className="suggest" role="listbox">
+        <ul className="suggest" aria-label="Matching places">
           {suggestions.length ? suggestions.map((p) => (
             <li key={p.id}>
-              <button type="button" role="option" onClick={() => { onPlace(p); setFilter(""); }}>
+              <button type="button" onClick={() => { onPlace(p); setFilter(""); }}>
                 {p.name}<small>{p.address}</small>
               </button>
             </li>
           )) : <li className="empty-suggest">No matching place</li>}
         </ul>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -415,7 +429,7 @@ function Posts({ conn }: { conn: Conn }) {
   return (
     <section>
       <div className="screen-head">
-        <h1>Posts</h1>
+        <div><h1>Posts</h1><p>Little updates. A better picture.</p></div>
         <div className="segment" role="tablist" aria-label="Sort posts">
           <button type="button" role="tab" aria-selected={sort === "useful"} className={sort === "useful" ? "on" : ""} onClick={() => setSort("useful")}>Useful</button>
           <button type="button" role="tab" aria-selected={sort === "recent"} className={sort === "recent" ? "on" : ""} onClick={() => setSort("recent")}>Recent</button>
@@ -451,7 +465,7 @@ function ComposerPost({ conn, lockedPlace, onPosted }: { conn: Conn; lockedPlace
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const chosen = lockedPlace ?? place;
-  if (!open) return <button className="text" type="button" onClick={() => { setErr(""); setOpen(true); }}>Post an update</button>;
+  if (!open) return <button className="compose-trigger" type="button" onClick={() => { setErr(""); setOpen(true); }}><span className="compose-plus"><Icon name="plus" /></span><span>Post an update<small>What’s happening where you are?</small></span></button>;
   return (
     <form
       className="composer"
@@ -792,6 +806,7 @@ function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn
     return (
       <div className="ping">
         <AnswerForm
+          key={id}
           conn={conn}
           prompt={prompt}
           onDone={() => setHidden((prev) => new Set(prev).add(id))}
@@ -803,7 +818,7 @@ function PromptPing({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn
   if (thanks) {
     return (
       <div className="ping">
-        <p>Thanks — signal sent.</p>
+        <ResponseThanks />
       </div>
     );
   }
@@ -825,6 +840,18 @@ function Respond({ conn, id }: { conn: NonNullable<ReturnType<typeof useDb>["con
   );
 }
 
+function ResponseThanks() {
+  return (
+    <div className="response-thanks" role="status">
+      <svg className="sent-check" width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden="true">
+        <circle cx="22" cy="22" r="21" fill="currentColor" />
+        <path d="m13 22 6 6 12-13" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div><h2>Thanks — signal sent.</h2><p>Your response is part of the picture.</p></div>
+    </div>
+  );
+}
+
 function AnswerForm({
   conn,
   prompt,
@@ -839,6 +866,8 @@ function AnswerForm({
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
   const controls = JSON.parse(prompt.controlsJson) as { dimension_key: string; label: string; options: { value: string; label: string }[] }[];
@@ -849,6 +878,10 @@ function AnswerForm({
   const visible = controls.filter((c) => c.dimension_key !== "other:place_part");
   const answered = visible.filter((c) => answers[c.dimension_key]).length;
   const submit = async (payload: Record<string, string>) => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setErr("");
     try {
       await conn.reducers.submitResponse({ batchId: prompt.batchId, answersJson: JSON.stringify(payload), note });
       setDone(true);
@@ -858,15 +891,18 @@ function AnswerForm({
       else onDone?.();
     } catch (e) {
       setErr((e as Error).message);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   };
-  if (done) return <p>Thanks — signal sent.</p>;
+  if (done) return <ResponseThanks />;
   return (
-    <>
-      <p>{prompt.placeName}</p>
+    <div className="answer-form" aria-busy={sending}>
+      <p className="answer-place">{prompt.placeName}</p>
       <h2>{prompt.question}</h2>
       {visible.map((c) => (
-        <fieldset className="choice-set" key={c.dimension_key}>
+        <fieldset disabled={sending} className="choice-set" key={c.dimension_key}>
           {c.label && c.dimension_key !== "other:answer" ? <legend>{c.label}</legend> : null}
           {c.options.map((o) => (
             <label className="radio" key={o.value}>
@@ -881,22 +917,23 @@ function AnswerForm({
         <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
       </label>
       {err && <p className="err">{err}</p>}
-      <div className="actions">
+      <div className="actions response-actions">
+        <p className="response-progress" aria-live="polite">{answered === visible.length ? "Ready to send" : `${answered} of ${visible.length} answered`}</p>
         <button
           className="btn"
-          disabled={prompt.responded || answered < visible.length}
+          disabled={sending || prompt.responded || answered < visible.length}
           onClick={() => submit(Object.fromEntries(visible.map((c) => [c.dimension_key, answers[c.dimension_key]])))}
         >
-          Send
+          {sending ? "Sending…" : "Send"}
         </button>
         {pass ? (
-          <button className="btn ghost" disabled={prompt.responded} onClick={() => submit({ "other:place_part": "not_here" })}>
+          <button className="btn ghost" disabled={sending || prompt.responded} onClick={() => submit({ "other:place_part": "not_here" })}>
             {pass.label}
           </button>
         ) : null}
-        {onDone ? <button className="btn ghost" onClick={onDone}>Not now</button> : null}
+        {onDone ? <button className="btn ghost" disabled={sending} onClick={onDone}>Not now</button> : null}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -955,22 +992,22 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
         <>
           <h1>Asked of you</h1>
           {prompts.map((p) => (
-            <div className="card" key={String(p.batchId)} onClick={() => go(`/respond/${p.batchId}`)}>
+            <button type="button" className="card" key={String(p.batchId)} onClick={() => go(`/respond/${p.batchId}`)}>
               <p className="body">{p.question}</p>
               <p>{p.placeName}</p>
-            </div>
+            </button>
           ))}
         </>
       ) : null}
       <h1>Recent questions</h1>
-      {queries.length === 0 ? <p>Nothing yet. Ask about a place and it will show up here.</p> : null}
+      {queries.length === 0 ? <div className="empty"><span className="empty-icon"><Icon name="questions" /></span><h2>Curiosity starts here.</h2><p>Your questions and answers stay here,<br />ready whenever you need them.</p><button className="btn" onClick={() => go("/")}>Ask your first question</button></div> : null}
       {queries.map((q) => {
         const open = OPEN_QUERY.has(q.status);
         const answer = q.answerJson
           ? (JSON.parse(q.answerJson) as { headline?: string; confidence?: { level?: string }; sourceCount?: number })
           : null;
         return (
-          <div className="card" key={String(q.id)} onClick={() => go(`/q/${q.id}`)}>
+          <button type="button" className="card" key={String(q.id)} onClick={() => go(`/q/${q.id}`)}>
             <div className="meta">
               <span>{STATUS_LABEL[q.status] ?? q.status}</span>
               <span>{formatAge((Date.now() - toMs(q.createdAt)) / 1000)}</span>
@@ -987,7 +1024,7 @@ function Activity({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]
               </p>
             ) : null}
             {open ? <p>In progress</p> : null}
-          </div>
+          </button>
         );
       })}
     </section>
@@ -1109,6 +1146,7 @@ function Profile({ conn }: { conn: NonNullable<ReturnType<typeof useDb>["conn"]>
 
   return (
     <section>
+      <h1>You</h1><div className="profile-avatar" aria-hidden="true">{shown.slice(0, 1).toUpperCase() || "?"}</div>
       {emailOf(auth) ? <p>{emailOf(auth)}</p> : null}
       {editing ? (
         <form
