@@ -8,7 +8,7 @@ Placeholders to fill before submitting:
 
 - Public ASI:One chat share link: `TODO_ASI_ONE_CHAT_LINK`
 - Demo video URL: `TODO_VIDEO_URL`
-- Public repo URL: `TODO_REPO_URL`
+- Public repo URL: `https://github.com/paulhrsn/ProxiPrompt.ai`
 
 ---
 
@@ -111,7 +111,7 @@ ProxiPrompt is real-time local decision intelligence: it knows what it does not 
 | ASI:One as the reasoning engine | `services/agent/src/proxiprompt_agent/llm.py` and `planner.py` call the ASI:One OpenAI-compatible API (`https://api.asi1.ai/v1`) to review and rewrite questions, plan evidence needs and survey wording, write the synthesized answer, and summarize posts. |
 | Usable from ASI:One chat | Verified in ASI:One chat: messages became real queries in the database. The agent resolves a campus place, submits through the orchestrator bridge, and replies with headline, confidence and sources, or sends a follow-up if the answer takes longer than about 45 s. |
 | Primary workflow completes without a custom frontend | Ask from ASI:One chat, nearby people are prompted, the answer returns in the chat. The PWA is only needed by the responders. |
-| Public repo | `TODO_REPO_URL` |
+| Public repo | `https://github.com/paulhrsn/ProxiPrompt.ai` |
 | Public ASI:One chat share link | `TODO_ASI_ONE_CHAT_LINK` |
 | Demo video | `TODO_VIDEO_URL` |
 
