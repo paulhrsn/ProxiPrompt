@@ -28,13 +28,6 @@ from .models import PlanRequest, SummarizePostRequest, SynthesizeRequest
 
 logger = logging.getLogger("proxiprompt.agent")
 
-_TRUTHY = {"1", "true", "yes", "on"}
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in _TRUTHY
-
-
 # ---------------------------------------------------------------------------
 # REST wire models (uagents.Model == pydantic v1). They mirror SPEC §9 so malformed
 # requests get a 400 from uagents; the payload is then re-validated and clamped by
@@ -43,7 +36,7 @@ def _env_flag(name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 Kind = Literal["objective", "subjective"]
-SourceType = Literal["response", "post", "comment", "social"]
+SourceType = Literal["response", "post", "comment"]
 
 
 class PlaceW(Model):

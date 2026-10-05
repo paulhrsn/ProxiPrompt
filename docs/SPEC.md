@@ -1,12 +1,12 @@
 # ProxiPrompt — Product & Architecture Contract
 
-This file is the canonical contract. It changes only when an agreed decision changes; record the reason in `PROGRESS.md` when it does. Operational state (what is built, what is next) lives in `PROGRESS.md`.
+This file is the canonical contract for how ProxiPrompt works. It changes only when an agreed decision changes.
 
 ## 1. Product
 
 **One line:** ProxiPrompt turns nearby humans into queryable, uncertainty-aware sensors. You ask about a place; an agent figures out what you actually need to know, checks fresh evidence, asks the fewest useful people near that place only if needed, and returns a recommendation with confidence and provenance.
 
-**Hackathon:** MHacks '26, 24 hours, team of four (Paul, Jerry, Shiyuan, Chinmay). Built agentically on one laptop at a time; agents hand off via `PROGRESS.md`.
+**Hackathon:** MHacks '26, 24 hours, team of four (Paul, Jerry, Shiyuan, Chinmay). Built agentically on one laptop at a time.
 
 **Tracks:** Main — Actually Intelligent (AI). Sponsor — Fetch.ai ASI:One Agent Challenge, Best Use of Spacetime.
 
@@ -50,7 +50,7 @@ spacetimedb/              SpacetimeDB TypeScript module
 services/orchestrator/    Node/TS worker (vitest)
 services/agent/           Python uAgent (uv, pytest)
 packages/core/            Shared TS: contracts (zod), dimension vocabulary, scoring, routing, freshness, ranking — pure functions, unit tested
-SPEC.md  PROGRESS.md
+docs/                     SPEC.md (this file), DEMO.md, DEVPOST.md
 ```
 
 Deployment target: PWA → Vercel; module → SpacetimeDB MainCloud; orchestrator and agent → separate Railway services. Orchestrator needs no inbound port and can run from a laptop as fallback. Agent needs a public HTTPS endpoint for Agentverse.
@@ -142,14 +142,12 @@ Timeline events shown to requester (compact, no chain-of-thought): "Understandin
 Per observation weight:
 `w = freshness × source_weight × reliability`
 - `freshness = clamp(1 − (age/ttl)², 0, 1)`; 0 if past `expires_at` or invalidated.
-- `source_weight`: response verified 1.0; response unverified 0.7; post verified 0.8; post unverified 0.55; comment 0.5; social (Bluesky) 0.35.
+- `source_weight`: response verified 1.0; response unverified 0.7; post verified 0.8; post unverified 0.55; comment 0.5.
 - `reliability` default 1.0 (range 0.5–1.2, P1).
 
 Per dimension: `support = 1 − Π(1 − wᵢ)`; `agreement` = weight share of the modal value (ordinal values within one step count as half agreement); `dim_conf = support × agreement`.
 
-Overall: weighted mean of `dim_conf` over required dimensions (objective weight 1.0, subjective 0.5). Ceiling by independent contributors: 1 → 0.6, 2 → 0.8, ≥3 → 0.95. Level: ≥0.70 High, ≥0.45 Medium, else Low. Sufficient when overall ≥ `SUFFICIENT_SCORE` (0.6) and every objective required dimension has **firsthand** support ≥ 0.5.
-
-**Firsthand vs social.** `support` counts every source; `firsthand_support` counts everything except `source_type:"social"`. Sufficiency, the independent-contributor count, and the ceiling all use firsthand only, so scraped public posts can inform a score but can never answer a query on their own and never appear in the "N recent nearby reports" figure. Social observations are also stored under their own `other:social_mention` dimension rather than a surveyed one, so they cannot distort a real dimension's modal value or agreement.
+Overall: weighted mean of `dim_conf` over required dimensions (objective weight 1.0, subjective 0.5). Ceiling by independent contributors: 1 → 0.6, 2 → 0.8, ≥3 → 0.95. Level: ≥0.70 High, ≥0.45 Medium, else Low. Sufficient when overall ≥ `SUFFICIENT_SCORE` (0.6) and every objective required dimension has support ≥ 0.5.
 
 Contradiction: a newer observation on the same dimension with a value ≥2 ordinal steps away halves older observations' freshness for that dimension.
 
@@ -210,7 +208,7 @@ Rate limits (queries 10/h, posts 10/h, comments 30/h per account; the service id
 
 ## 13. Priorities
 - **P0 (non-negotiable, in order):** query → plan → evidence check → push to nearby → one-time response → live synthesis → caching/dedup → async result notification; then Live Pulse posts/comments/summaries/ranking; impact receipts; guardrails; onboarding/permission/error states.
-- **P1:** Bluesky public `app.bsky.feed.searchPosts` provider (normalized `source_type:"social"`, never claimed verified); diagnostics drawer UI; Confirm/Changed reactions; richer contributor recognition. Built: reciprocal priority (a requester's credit is their non-pass prompt responses in the last 24 hours, capped at 5, and it orders their query earlier and adds that many people to the first wave; see §7).
+- **P1:** diagnostics drawer UI; Confirm/Changed reactions; richer contributor recognition. Built: reciprocal priority (a requester's credit is their non-pass prompt responses in the last 24 hours, capped at 5, and it orders their query earlier and adds that many people to the first wave; see §7).
 
 ## 14. Canonical demo (acceptance scenario)
 1. Four signed-in installed PWAs. Paul = requester (laptop or phone). Jerry and Shiyuan have demo locations at Shapiro (~20 m, ~45 m). Chinmay demo-located at Michigan Union (~600 m). One device shows real GPS to prove acquisition.
@@ -228,4 +226,4 @@ Rate limits (queries 10/h, posts 10/h, comments 30/h per account; the service id
 - Reducers reject: unauthorized transitions, non-recipient answers, duplicate answers, excess recipients, stale-location selection, identity exposure in public views.
 - Verified: cache hit, active-job dedup, TTL expiry, contradiction handling, cooldown, deadline/insufficient result, worker restart recovery.
 - Agentverse profile live; ASI:One chat triggers the same workflow.
-- Unit tests for scoring/routing/state logic; integration tests across worker ↔ agent ↔ database contracts; one browser-driven end-to-end scenario. Results recorded in `PROGRESS.md`.
+- Unit tests for scoring/routing/state logic; integration tests across worker ↔ agent ↔ database contracts; one browser-driven end-to-end scenario.

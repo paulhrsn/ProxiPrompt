@@ -1,6 +1,6 @@
 import type { DimensionKind } from "./dimensions";
 
-export type SourceType = "response" | "post" | "comment" | "social";
+export type SourceType = "response" | "post" | "comment";
 export type ConfidenceLevel = "High" | "Medium" | "Low";
 
 export interface ScoringObservation {
@@ -42,12 +42,6 @@ export interface DimensionScore {
   modalLabel: string | null;
   /** Usable (non-zero weight) observations. */
   count: number;
-  /**
-   * Support from firsthand observations only (everything except `social`).
-   * Sufficiency gates on this so scraped posts can inform an answer but never
-   * carry one on their own (SPEC §1.1: never answer without fresh evidence).
-   */
-  firsthandSupport: number;
 }
 
 export interface ObservationFactor {
@@ -87,8 +81,8 @@ export interface ScoreResult {
   /** Dimensions whose fresh firsthand reports disagree; each one caps `level`. */
   conflicts: DimensionConflict[];
   /**
-   * Distinct contributor ids among usable FIRSTHAND observations on required
-   * dimensions (social excluded). This is the number shown as "N nearby reports".
+   * Distinct contributor ids among usable observations on required dimensions.
+   * This is the number shown as "N nearby reports".
    */
   contributors: number;
   /** For the diagnostics drawer. */
@@ -106,7 +100,6 @@ export const SOURCE_WEIGHTS = {
   postVerified: 0.8,
   postUnverified: 0.55,
   comment: 0.5,
-  social: 0.35,
 } as const;
 
 const KIND_WEIGHT: Record<DimensionKind, number> = { objective: 1.0, subjective: 0.5 };
@@ -125,8 +118,6 @@ export function sourceWeight(sourceType: SourceType, verifiedNearby: boolean): n
       return verifiedNearby ? SOURCE_WEIGHTS.postVerified : SOURCE_WEIGHTS.postUnverified;
     case "comment":
       return SOURCE_WEIGHTS.comment;
-    case "social":
-      return SOURCE_WEIGHTS.social;
   }
 }
 
@@ -160,12 +151,11 @@ export function levelFor(score: number): ConfidenceLevel {
 
 /**
  * Sufficient when score ≥ threshold and every objective required dimension has
- * firsthand support ≥ 0.5. Social evidence counts toward the score but not
- * toward this gate, so a place with only scraped posts still prompts people.
+ * support ≥ 0.5.
  */
 export function isSufficient(
   score: number,
-  dimensions: { key: string; firsthandSupport: number }[],
+  dimensions: { key: string; support: number }[],
   required: RequiredDimension[],
   sufficientScore = DEFAULT_SUFFICIENT_SCORE,
 ): boolean {
@@ -173,7 +163,7 @@ export function isSufficient(
   return required
     .filter((r) => r.kind === "objective")
     .every(
-      (r) => (dimensions.find((d) => d.key === r.key)?.firsthandSupport ?? 0) >= OBJECTIVE_SUPPORT_MIN,
+      (r) => (dimensions.find((d) => d.key === r.key)?.support ?? 0) >= OBJECTIVE_SUPPORT_MIN,
     );
 }
 
@@ -236,7 +226,7 @@ function weighDimension(
  * ordinals, when distinct values each carry real weight. A lone sliver of dissent is ignored.
  */
 function detectConflict(key: string, items: Weighted[]): DimensionConflict | null {
-  const live = items.filter((i) => i.factor.weight > 0 && i.obs.sourceType !== "social");
+  const live = items.filter((i) => i.factor.weight > 0);
   if (live.length < 2) return null;
   const total = live.reduce((t, i) => t + i.factor.weight, 0);
   const ordinal = live.filter((i) => i.obs.ordinal !== null);
@@ -267,15 +257,10 @@ function detectConflict(key: string, items: Weighted[]): DimensionConflict | nul
 function scoreDimension(key: string, items: Weighted[]): DimensionScore {
   const usable = items.filter((i) => i.factor.weight > 0);
   if (usable.length === 0) {
-    return { key, support: 0, agreement: 0, conf: 0, modalValue: null, modalLabel: null, count: 0, firsthandSupport: 0 };
+    return { key, support: 0, agreement: 0, conf: 0, modalValue: null, modalLabel: null, count: 0 };
   }
 
   const support = 1 - usable.reduce((p, i) => p * (1 - i.factor.weight), 1);
-  const firsthandSupport =
-    1 -
-    usable
-      .filter((i) => i.obs.sourceType !== "social")
-      .reduce((p, i) => p * (1 - i.factor.weight), 1);
 
   // Modal value = highest total weight; ties go to the most recently observed.
   const groups = new Map<string, { weight: number; newest: Weighted }>();
@@ -321,7 +306,6 @@ function scoreDimension(key: string, items: Weighted[]): DimensionScore {
     modalValue: modal.newest.obs.value,
     modalLabel: modal.newest.obs.valueLabel,
     count: usable.length,
-    firsthandSupport,
   };
 }
 
@@ -341,10 +325,8 @@ export function scoreEvidence(input: ScoreInput): ScoreResult {
       nowMs,
     );
     allFactors.push(...items.map((i) => i.factor));
-    // Social posts have no identified contributor, so counting them would inflate both the
-    // ceiling and the "N nearby reports" shown to the requester. Firsthand sources only.
     for (const i of items) {
-      if (i.factor.weight > 0 && i.obs.sourceType !== "social") contributorIds.add(i.obs.contributorId);
+      if (i.factor.weight > 0) contributorIds.add(i.obs.contributorId);
     }
     dimensions.push(scoreDimension(req.key, items));
     const conflict = detectConflict(req.key, items);

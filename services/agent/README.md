@@ -41,7 +41,7 @@ Keywords: local conditions, crowd, wait time, seating, campus, real-time, human 
 | Interface | Used by | Notes |
 |---|---|---|
 | Chat Protocol (`chat_protocol_spec`, manifest published, mailbox) | ASI:One / Agentverse users | Replies, then ends the session |
-| `POST /plan`, `POST /synthesize`, `POST /summarize_post`, `GET /health` | ProxiPrompt orchestrator | JSON over HTTP, see `SPEC.md` §9 |
+| `POST /plan`, `POST /synthesize`, `POST /summarize_post`, `GET /health` | ProxiPrompt orchestrator | JSON over HTTP, see `docs/SPEC.md` §9 |
 
 Planner behavior: when `ASI_ONE_API_KEY` is set, ASI:One (OpenAI-compatible, `https://api.asi1.ai/v1`, model `asi1` by default) does the planning and writing; every output is validated and clamped (dimension vocabulary, TTL bounds, radius 50-500 m, 1-5 responders, 1-3 survey controls). With no key, or if the model output is invalid, a deterministic heuristic planner is used and responses carry `"planner": "heuristic"`.
 

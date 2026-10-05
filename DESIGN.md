@@ -8,7 +8,7 @@ The app fills a phone viewport and is centered in a 460px column on desktop. Res
 
 Use the system font stack; headings are bold, tightly spaced sans serif. Headings stand alone; explanatory copy stays sentence case. Cards use 16px corners and controls use 12–16px corners.
 
-The palette is strictly neutral: white, gray, and charcoal, with no hue accents. Branding is deferred: show the plain product name, with no assumed logo or stylized wordmark. The installable app icon is a text-only placeholder. High/Medium/Low retain explicit written labels and distinct neutral fills.
+The palette is a dark forest background (`--bg: #0d1410`) with warm white text and a mint accent (`--accent: #80d3aa`); the tokens live at the top of `apps/web/src/styles.css`. The header shows the question-mark pin logo (`apps/web/public/logo.png`, also the installable app icon) beside the product name. High/Medium/Low retain explicit written labels as well as color.
 
 ## Screens
 

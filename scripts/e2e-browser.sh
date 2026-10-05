@@ -24,7 +24,6 @@ case "$STDB_TARGET" in
 esac
 unset SPACETIMEDB_TOKEN || true
 export DEMO_MODE=1
-export ENABLE_BLUESKY=0
 export ENABLE_DEV_WIPE=1
 export AGENT_URL="${AGENT_URL:-http://127.0.0.1:8001}"
 export ORCH_PROXY_TARGET="http://127.0.0.1:${ORCH_PORT}"

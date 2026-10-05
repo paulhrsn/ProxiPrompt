@@ -16,3 +16,4 @@ target/
 coverage/
 test-results/
 playwright-report/
+.impeccable/

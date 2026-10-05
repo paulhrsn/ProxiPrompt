@@ -5,7 +5,7 @@ import { clampTtl, getDimension, normalizeDimensionKey, type Volatility } from "
 
 export const KindSchema = z.enum(["objective", "subjective"]);
 export const VolatilitySchema = z.enum(["high", "medium", "low"]);
-export const SourceTypeSchema = z.enum(["response", "post", "comment", "social"]);
+export const SourceTypeSchema = z.enum(["response", "post", "comment"]);
 export const PlannerSchema = z.enum(["llm", "heuristic"]);
 export const LevelSchema = z.enum(["High", "Medium", "Low"]);
 

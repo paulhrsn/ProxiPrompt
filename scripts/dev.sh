@@ -17,7 +17,6 @@ for envfile in "$ROOT/services/agent/.env" "$ROOT/services/orchestrator/.env"; d
   fi
 done
 export DEMO_MODE="${DEMO_MODE:-1}"
-export ENABLE_BLUESKY="${ENABLE_BLUESKY:-0}"
 # Lets the web app's "Wipe activity (dev)" button reach the orchestrator. Local dev only.
 export ENABLE_DEV_WIPE="${ENABLE_DEV_WIPE:-1}"
 export AGENT_URL="${AGENT_URL:-http://127.0.0.1:8001}"

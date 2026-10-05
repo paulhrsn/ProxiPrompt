@@ -39,8 +39,6 @@ export const JOB_TRANSITIONS: Record<string, readonly string[]> = {
   expired: [],
 };
 
-const MICROS_PER_S = 1_000_000n;
-
 export const ts = (ms: number): Timestamp => new Timestamp(BigInt(Math.round(ms)) * 1000n);
 export const tsMicros = (micros: bigint): Timestamp => new Timestamp(micros);
 
@@ -374,7 +372,7 @@ export function makeFakeConn(now: number): FakeConn {
     requirePlace(a.placeId);
     if (!/^[a-z0-9_:-]+$/.test(a.dimension)) throw new ReducerError("dimension has invalid characters");
     if (!["objective", "subjective"].includes(a.kind)) throw new ReducerError("kind must be objective|subjective");
-    if (!["response", "post", "comment", "social"].includes(a.sourceType)) throw new ReducerError("bad source_type");
+    if (!["response", "post", "comment"].includes(a.sourceType)) throw new ReducerError("bad source_type");
     if (a.expiresAtMicros <= a.observedAtMicros) throw new ReducerError("expires_at must be after observed_at");
     const dedupKey = `${a.sourceType}:${a.sourceId}:${a.dimension}`;
     if (rows.svcObservation.some((o) => o.dedupKey === dedupKey)) return; // idempotent

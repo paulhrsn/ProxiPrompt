@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 Kind = Literal["objective", "subjective"]
 Volatility = Literal["high", "medium", "low"]
-SourceType = Literal["response", "post", "comment", "social"]
+SourceType = Literal["response", "post", "comment"]
 Planner = Literal["llm", "heuristic"]
 Recommendation = Literal["go", "maybe", "avoid", "insufficient"]
 Level = Literal["High", "Medium", "Low"]

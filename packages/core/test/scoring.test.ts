@@ -51,7 +51,6 @@ describe("tables", () => {
       postVerified: 0.8,
       postUnverified: 0.55,
       comment: 0.5,
-      social: 0.35,
     });
   });
 
@@ -216,13 +215,12 @@ describe("scoreEvidence", () => {
 
   it("source weights scale observation weight", () => {
     const r = scoreEvidence({
-      observations: [obs({ id: "s", sourceType: "social", verifiedNearby: false })],
+      observations: [obs({ id: "c", sourceType: "comment", verifiedNearby: false })],
       required: REQ_NOISE,
       nowMs: NOW,
     });
-    expect(r.factors.observations[0]!.sourceWeight).toBe(0.35);
-    expect(r.dimensions[0]!.support).toBeCloseTo(0.35, 6);
-    expect(r.sufficient).toBe(false); // objective support < 0.5
+    expect(r.factors.observations[0]!.sourceWeight).toBe(0.5);
+    expect(r.dimensions[0]!.support).toBeCloseTo(0.5, 6);
   });
 
   it("requires objective support ≥ 0.5 per objective dimension; subjective may be weaker", () => {
@@ -275,46 +273,6 @@ describe("scoreEvidence", () => {
   });
 });
 
-describe("social evidence never carries an answer on its own", () => {
-  const social = (id: string) =>
-    obs({ id, sourceType: "social", verifiedNearby: false, contributorId: `anon:${id}`, ordinal: null });
-
-  it("is never sufficient without a firsthand observation", () => {
-    const r = scoreEvidence({
-      observations: [social("s1"), social("s2"), social("s3")],
-      required: REQ_NOISE,
-      nowMs: NOW,
-    });
-    // Support is real (three 0.35-weight posts agree) but none of it is firsthand.
-    expect(r.dimensions[0]!.support).toBeGreaterThan(0.5);
-    expect(r.dimensions[0]!.firsthandSupport).toBe(0);
-    expect(r.sufficient).toBe(false);
-  });
-
-  it("does not count toward contributors or the ceiling", () => {
-    const r = scoreEvidence({
-      observations: [social("s1"), social("s2"), social("s3")],
-      required: REQ_NOISE,
-      nowMs: NOW,
-    });
-    expect(r.contributors).toBe(0);
-    expect(r.ceiling).toBe(0);
-    expect(r.score).toBe(0);
-  });
-
-  it("still informs the score alongside a firsthand response", () => {
-    const r = scoreEvidence({
-      // Half-aged response (weight 0.75) so support does not already saturate at 1.
-      observations: [obs({ id: "a", contributorId: "u1", observedAtMs: NOW - TTL_MS / 2 }), social("s1")],
-      required: REQ_NOISE,
-      nowMs: NOW,
-    });
-    expect(r.contributors).toBe(1);
-    expect(r.dimensions[0]!.support).toBeGreaterThan(r.dimensions[0]!.firsthandSupport);
-    expect(r.sufficient).toBe(true);
-  });
-});
-
 describe("conflicting firsthand reports", () => {
   const req = [{ key: "seating_availability", kind: "objective" as const }];
   const seat = (id: string, label: string, ordinal: number | null, over: Partial<ScoringObservation> = {}) =>
@@ -361,13 +319,12 @@ describe("conflicting firsthand reports", () => {
     expect(r.conflicts).toEqual([]);
   });
 
-  it("ignores expired reports and social posts", () => {
+  it("ignores expired reports", () => {
     const r = scoreEvidence({
       observations: [
         seat("a", "Plenty", 4),
         seat("b", "Plenty", 4),
         seat("old", "None", 1, { invalidated: true }),
-        seat("soc", "None", 1, { sourceType: "social" }),
       ],
       required: req,
       nowMs: NOW,

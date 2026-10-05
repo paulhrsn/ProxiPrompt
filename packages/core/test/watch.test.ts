@@ -38,11 +38,10 @@ describe("inferWatchTarget", () => {
 describe("watchReading", () => {
   const target = inferWatchTarget("seats open")!;
 
-  it("is met by plenty and not by a few, an expired report, or a social post", () => {
+  it("is met by plenty and not by a few or an expired report", () => {
     expect(watchReading([obs()], target, now).met).toBe(true);
     expect(watchReading([obs({ value: "few", valueLabel: "A few" })], target, now).met).toBe(false);
     expect(watchReading([obs({ expiresAtMs: now - 1 })], target, now).met).toBe(false);
-    expect(watchReading([obs({ sourceType: "social" })], target, now).met).toBe(false);
   });
 
   it("treats a matching label as open seats even when the option id differs", () => {

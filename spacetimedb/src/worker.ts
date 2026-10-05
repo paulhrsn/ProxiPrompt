@@ -28,7 +28,7 @@ import {
 } from './lib';
 
 const KINDS = ['objective', 'subjective'];
-const SOURCE_TYPES = ['response', 'post', 'comment', 'social'];
+const SOURCE_TYPES = ['response', 'post', 'comment'];
 const MAX_TTL_S = 172_800n; // SPEC §6: longest TTL bound (low volatility)
 
 // ---------- queries ----------
@@ -420,7 +420,7 @@ export const worker_add_observation = spacetimedb.reducer(
     const value = checkString('value', a.value, 1, 120);
     const value_label = checkString('value_label', a.value_label, 1, 200);
     if (!KINDS.includes(a.kind)) fail('kind must be objective|subjective');
-    if (!SOURCE_TYPES.includes(a.source_type)) fail('source_type must be response|post|comment|social');
+    if (!SOURCE_TYPES.includes(a.source_type)) fail('source_type must be response|post|comment');
     const source_id = checkString('source_id', a.source_id, 1, 128);
     const now = ctx.timestamp.microsSinceUnixEpoch;
     if (a.observed_at_micros > now + 60n * MICROS_PER_S) fail('observed_at cannot be in the future');
@@ -476,7 +476,7 @@ export const worker_record_impact = spacetimedb.reducer(
   },
   (ctx, a) => {
     requireService(ctx);
-    if (!SOURCE_TYPES.includes(a.source_type)) fail('source_type must be response|post|comment|social');
+    if (!SOURCE_TYPES.includes(a.source_type)) fail('source_type must be response|post|comment');
     if (a.kind !== 'helped' && a.kind !== 'avoided_prompt') fail("kind must be 'helped' or 'avoided_prompt'");
     const source_id = checkString('source_id', a.source_id, 1, 128);
     getQuery(ctx, a.query_id);

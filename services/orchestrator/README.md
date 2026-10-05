@@ -1,6 +1,6 @@
 # Orchestrator
 
-The worker that subscribes to SpacetimeDB, calls the agent, routes prompts to nearby people and writes answers. See `SPEC.md` section 2 and `NEXT_STEPS.md` section 0 for how it fits in.
+The worker that subscribes to SpacetimeDB, calls the agent, routes prompts to nearby people and writes answers. See [`docs/SPEC.md`](../../docs/SPEC.md) section 2 for how it fits in.
 
 ## Simulated neighbors
 

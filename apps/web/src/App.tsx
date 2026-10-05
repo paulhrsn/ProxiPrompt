@@ -60,7 +60,7 @@ const DEMO_PRESETS = CATALOG_PLACES;
 
 export default function App() {
   const auth = useOidc();
-  const { dev, setDev } = useDevMode();
+  const { dev } = useDevMode();
   const signedIn = dev || !!auth?.isAuthenticated;
   const { conn, error, tick } = useDb();
   const [route, setRoute] = useState<Route>(parseHash);
@@ -866,7 +866,7 @@ interface SourceFactor {
   ageS?: number; weight: number; contradicted: boolean;
 }
 
-const SOURCE_TYPE_LABEL: Record<string, string> = { response: "Response", post: "Post", comment: "Comment", social: "Social post" };
+const SOURCE_TYPE_LABEL: Record<string, string> = { response: "Response", post: "Post", comment: "Comment" };
 
 function dimensionName(key: string): string {
   return getDimension(key)?.label ?? "";
@@ -875,14 +875,13 @@ function dimensionName(key: string): string {
 /** Plain-words view of what an answer rests on: each live report, then why confidence is what it is. */
 function SourcesView({ ans }: { ans: { confidence?: { level?: string }; sourceCount?: number; factors?: { observations?: SourceFactor[] }; conflicts?: { dimension: string; labels: string[] }[] } }) {
   const live = (ans.factors?.observations ?? []).filter((o) => o.weight > 0).sort((a, b) => (a.ageS ?? 0) - (b.ageS ?? 0));
-  const unverified = live.filter((o) => o.sourceType !== "social" && !o.verifiedNearby).length;
+  const unverified = live.filter((o) => !o.verifiedNearby).length;
   const reasons: string[] = [];
   for (const c of ans.conflicts ?? []) {
     reasons.push(`Reports disagree${dimensionName(c.dimension) ? ` on ${dimensionName(c.dimension).toLowerCase()}` : ""} (${c.labels.join(" vs ")}), so confidence is held down.`);
   }
   if (ans.sourceCount === 1) reasons.push("Only one person reported this, so confidence stays limited.");
   if (unverified) reasons.push(`${unverified} of ${live.length} report${live.length === 1 ? " was" : "s were"} not confirmed as coming from someone nearby.`);
-  if (live.some((o) => o.sourceType === "social")) reasons.push("Social posts add context but can't carry an answer alone.");
   if (live.some((o) => o.contradicted)) reasons.push("A newer report contradicted an older one, so the older one counts for less.");
   return (
     <div className="sources-view" data-testid="sources-view">
@@ -894,7 +893,7 @@ function SourcesView({ ans }: { ans: { confidence?: { level?: string }; sourceCo
               <strong>{[dimensionName(o.dimension), o.valueLabel].filter(Boolean).join(": ") || "Report"}</strong>
               <span>
                 {SOURCE_TYPE_LABEL[o.sourceType ?? ""] ?? "Report"} · {formatAge(o.ageS ?? 0)}
-                {o.sourceType === "social" ? "" : o.verifiedNearby ? " · Verified nearby" : " · Not verified nearby"}
+                {o.verifiedNearby ? " · Verified nearby" : " · Not verified nearby"}
               </span>
             </li>
           ))}

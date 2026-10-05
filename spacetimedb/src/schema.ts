@@ -215,9 +215,9 @@ export const observation = table(
     value_label: t.string(),
     ordinal: t.i32().optional(),
     kind: t.string(), // objective|subjective
-    source_type: t.string(), // response|post|comment|social
+    source_type: t.string(), // response|post|comment
     source_id: t.string(),
-    contributor: t.identity().optional(), // private; absent for social
+    contributor: t.identity().optional(), // private
     verified_nearby: t.bool(),
     observed_at: t.timestamp(),
     expires_at: t.timestamp(),

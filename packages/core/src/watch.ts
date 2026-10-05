@@ -81,15 +81,14 @@ export function inferWatchTarget(
   return { dimension, phrase, metValues };
 }
 
-/** Modal firsthand reading for one dimension. Social posts never trip a watch. */
+/** Modal firsthand reading for one dimension. */
 export function watchReading(observations: WatchObservation[], target: WatchTarget, nowMs: number): WatchReading {
   const wanted = new Set(target.metValues);
   const live = observations.filter(
     (o) =>
       o.dimension === target.dimension &&
       !o.invalidated &&
-      o.expiresAtMs > nowMs &&
-      o.sourceType !== "social",
+      o.expiresAtMs > nowMs,
   );
   if (live.length === 0) {
     return { met: false, valueLabel: null, contributors: 0, ageS: 0 };

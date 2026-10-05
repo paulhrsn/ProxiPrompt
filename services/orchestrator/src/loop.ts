@@ -20,7 +20,6 @@ import {
 import { Identity } from "spacetimedb";
 import type { DbConnection } from "../../../spacetimedb/bindings/index.js";
 import { callPlan, callSummarize, callSynthesize } from "./agent.js";
-import { blueskyQueryForPlace, searchBluesky } from "./bluesky.js";
 import { pushEnabled, sendPush } from "./push.js";
 import { hexOf, nowMs, parseJson, toMicros, toMs } from "./util.js";
 
@@ -125,9 +124,6 @@ async function event(conn: Conn, queryId: bigint, kind: string, message: string)
 
 /** SPEC §10: a post/comment is verified-nearby when its author's location is fresh and within 150 m. */
 const POST_VERIFY_RADIUS_M = 150;
-
-/** Scraped public posts (SPEC §13 P1) live here, never under a surveyed dimension. */
-const SOCIAL_DIMENSION = "other:social_mention";
 
 /** "Can you actually see this?" control. Its answers are never stored as evidence. */
 const PRESENCE_KEY = "other:place_part";
@@ -439,8 +435,6 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
         continue;
       }
 
-      await maybeImportBluesky(conn, place, plan, now);
-
       const jobs = rows(conn.db.svcEvidenceJob.iter()).map((j) => ({
         id: String(j.id),
         placeId: j.placeId,
@@ -523,37 +517,6 @@ async function processPlanningQueries(conn: Conn, cfg: ReturnType<typeof getConf
       }
     }
   }
-}
-
-async function maybeImportBluesky(
-  conn: Conn,
-  place: { id: string; name: string },
-  plan: PlanResponse,
-  now: number,
-) {
-  const posts = await searchBluesky(blueskyQueryForPlace(place.name));
-  for (const p of posts.slice(0, 3)) {
-    const dim = plan.dimensions[0];
-    if (!dim) continue;
-    await conn.reducers.workerAddObservation({
-      placeId: place.id,
-      // Its own dimension on purpose. Filed under a surveyed dimension, every post would
-      // share the junk value "social" and so dominate that dimension's modal value and
-      // agreement. Scoring also excludes social from sufficiency and the contributor count.
-      dimension: SOCIAL_DIMENSION,
-      value: "social",
-      valueLabel: p.text.slice(0, 80),
-      ordinal: undefined,
-      kind: dim.kind,
-      sourceType: "social",
-      sourceId: p.uri.slice(0, 120),
-      contributor: undefined,
-      verifiedNearby: false,
-      observedAtMicros: toMicros(p.createdAtMs),
-      expiresAtMicros: toMicros(p.createdAtMs + dim.proposed_ttl_s * 1000),
-    });
-  }
-  void now;
 }
 
 /**
@@ -682,7 +645,7 @@ async function promptWave(
     const ownPlan = queryPlan(q, plan);
     const ownScore = scoreEvidence({ observations: liveObs, required: ownPlan.dimensions, nowMs: now });
     for (const dimension of ownScore.dimensions) {
-      if (dimension.firsthandSupport < 0.5 || dimension.conf < cfg.SUFFICIENT_SCORE) needed.add(dimension.key);
+      if (dimension.support < 0.5 || dimension.conf < cfg.SUFFICIENT_SCORE) needed.add(dimension.key);
     }
   }
   const dimensionControls = survey.controls
@@ -991,8 +954,8 @@ async function synthesizeQuery(
     missing_dimensions: score.missingDimensions,
   });
   // `obs` is every live observation at the place, including ones on dimensions this question
-  // never asked about and anonymous social posts. score.contributors counts only firsthand
-  // sources on the required dimensions, so this is the honest test for "we have an answer"
+  // never asked about. score.contributors counts only sources on the required dimensions,
+  // so this is the honest test for "we have an answer"
   // (SPEC §1.1: with no fresh evidence the result is explicitly insufficient).
   // answered -> insufficient is not a legal transition, so a refreshed answer that has become
   // unsure (for example after a late conflicting report) stays "answered" and says so in text.
@@ -1003,9 +966,7 @@ async function synthesizeQuery(
   // and derives the confidence ceiling from that same number, so reuse it: a separate count
   // over every observation at the place contradicts the confidence level shown next to it.
   const sourceCount = score.contributors;
-  const newest = used
-    .filter((o) => o.sourceType !== "social")
-    .reduce((m, o) => Math.max(m, o.observedAtMs), 0);
+  const newest = used.reduce((m, o) => Math.max(m, o.observedAtMs), 0);
   await conn.reducers.workerSetAnswer({
     queryId,
     status,
@@ -1158,4 +1119,3 @@ async function deliverAnswerNotifications(conn: Conn, now: number) {
   }
 }
 
-export const _test = { scoringObs, processedQueries, processedResponses };

@@ -1,7 +1,7 @@
 /**
  * Regression tests for the orchestrator tick, one per defect found in the
  * 2026-10-03 correctness pass. Runs against the in-memory fake connection in
- * `fake-conn.ts`; the agent, push, and Bluesky edges are mocked.
+ * `fake-conn.ts`; the agent and push edges are mocked.
  */
 import { CATALOG_PLACES } from "@proxiprompt/core";
 import { readFileSync } from "node:fs";
@@ -19,11 +19,6 @@ vi.mock("../src/push.js", () => ({
   pushEnabled: vi.fn(() => false),
   sendPush: vi.fn(async () => "ok"),
   initPush: vi.fn(),
-}));
-vi.mock("../src/bluesky.js", () => ({
-  searchBluesky: vi.fn(async () => []),
-  blueskyQueryForPlace: vi.fn((name: string) => name),
-  parseSearchPosts: vi.fn(() => []),
 }));
 
 import { callPlan, callSummarize, callSynthesize } from "../src/agent.js";
@@ -157,10 +152,9 @@ describe("bug 1: report count agrees with the confidence it sits next to", () =>
 
     // One response on the required dimension…
     addObservation(conn, { dimension: "noise_level", contributor: u1 });
-    // …plus unrelated noise at the same place: another dimension, and an anonymous
-    // social post. Neither is a nearby report for THIS question.
+    // …plus an unrelated report at the same place on another dimension. It is not a
+    // nearby report for THIS question.
     addObservation(conn, { dimension: "crowd_level", contributor: identityFor("u2"), sourceType: "post" });
-    addObservation(conn, { dimension: "other:social_mention", sourceType: "social", contributor: undefined });
 
     const q = addQuery(conn, asker, place.id, "How loud is Shapiro?");
     await tick(asConn(conn));
@@ -514,31 +508,6 @@ describe("bug 5: the requester's timeline", () => {
     expect(received).toHaveLength(1);
     // Denominator is the number of people actually asked, not the plan's request.
     expect(received[0]!.message).toBe("Received 1 of 2");
-  });
-});
-
-describe("bug 6: social evidence cannot answer a query by itself", () => {
-  it("still prompts people when only scraped posts exist, and claims no contributors", async () => {
-    const conn = makeFakeConn(NOW);
-    const place = addPlace(conn);
-    const asker = addUser(conn, "asker", { lat: 42.30, lng: -83.70 });
-    addUser(conn, "n1", { lat: metersNorth(place.lat, 20), lng: place.lng });
-    addUser(conn, "n2", { lat: metersNorth(place.lat, 45), lng: place.lng });
-    vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
-
-    // Three agreeing social posts: support ~0.72 under the old gate, which answered
-    // the query outright with nobody asked.
-    for (let i = 0; i < 3; i++) {
-      addObservation(conn, { dimension: "noise_level", sourceType: "social", contributor: undefined, ordinal: undefined });
-    }
-
-    const q = addQuery(conn, asker, place.id, "Is it quiet?");
-    await tick(asConn(conn));
-
-    const row = conn.rows.svcQuery.find((r) => r.id === q.id)!;
-    expect(row.status).toBe("collecting");
-    expect(row.answerJson).toBeUndefined();
-    expect(conn.rows.svcPromptRecipient).toHaveLength(2);
   });
 });
 
@@ -1179,7 +1148,7 @@ describe("audit reproductions", () => {
     const a=addUser(c,"audit_a",{lat:42.30,lng:-83.70});
     vi.mocked(callPlan).mockResolvedValue(plan(["noise_level"]) as never);
     addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"low",valueLabel:"Quiet",ordinal:0,ageMs:1000});
-    const q=addQuery(c,a,p.id,"Is Shapiro quiet?"); await tick(asConn(c));
+    addQuery(c,a,p.id,"Is Shapiro quiet?"); await tick(asConn(c));
     const before=vi.mocked(callSynthesize).mock.calls.length;
     addObservation(c,{dimension:"noise_level",contributor:identityFor("reporter1"),value:"high",valueLabel:"Loud",ordinal:2});
     await tick(asConn(c));
